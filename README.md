@@ -29,9 +29,11 @@ sudo pacman -S ffmpeg wine python-pyyaml python-rich
 
 ```sh
 pip install -r requirements.txt
+# or, with uv:
+uv sync
 ```
 
-`requirements.txt` contains only `pyyaml` and `rich`.
+`requirements.txt` and `pyproject.toml` both declare only `pyyaml` and `rich`.
 
 ### Wine prefix setup (for `wine_dbpoweramp` backend)
 
@@ -194,8 +196,8 @@ standard file browsers.
 
 ## Design docs
 
-- `plans/00-overview-and-architecture.md` — architecture overview, design principles, known risks
-- `plans/01-config-schema.md` — settings.yaml and presets.yaml schema, full CLI flag table
-- `plans/02-module-specifications.md` — per-module signatures and contracts
-- `plans/03-implementation-roadmap.md` — phased implementation notes
-- `plans/04-cursor-agent-tasks.md` — task list and AGENTS.md rules
+- `plans/plans1/00-overview-and-architecture.md` — architecture overview, design principles, known risks
+- `plans/plans1/01-config-schema.md` — settings.yaml and presets.yaml schema, full CLI flag table
+- `plans/plans1/02-module-specifications.md` — per-module signatures and contracts
+- `plans/plans1/03-implementation-roadmap.md` — phased implementation notes
+- `plans/plans1/04-cursor-agent-tasks.md` — task list and AGENTS.md rules

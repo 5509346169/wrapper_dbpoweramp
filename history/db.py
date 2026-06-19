@@ -1,6 +1,7 @@
 """History database module for tracking conversion and copy jobs."""
 
 import sqlite3
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -22,21 +23,23 @@ class ConversionDB:
         """
         self.db_path = db_path
         self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
-        self._conn.execute(
-            "CREATE TABLE IF NOT EXISTS history ("
-            "    id INTEGER PRIMARY KEY AUTOINCREMENT,"
-            "    source_path TEXT,"
-            "    dest_path TEXT,"
-            "    job_type TEXT,"
-            "    command TEXT,"
-            "    status TEXT,"
-            "    error_msg TEXT,"
-            "    stdout TEXT,"
-            "    timestamp TEXT,"
-            "    UNIQUE(source_path, dest_path)"
-            ")"
-        )
-        self._conn.commit()
+        self._lock = threading.RLock()
+        with self._lock:
+            self._conn.execute(
+                "CREATE TABLE IF NOT EXISTS history ("
+                "    id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                "    source_path TEXT,"
+                "    dest_path TEXT,"
+                "    job_type TEXT,"
+                "    command TEXT,"
+                "    status TEXT,"
+                "    error_msg TEXT,"
+                "    stdout TEXT,"
+                "    timestamp TEXT,"
+                "    UNIQUE(source_path, dest_path)"
+                ")"
+            )
+            self._conn.commit()
 
     def get_record(self, source: str, dest: str) -> Optional[dict]:
         """Return the row matching (source_path, dest_path), or None.
@@ -49,26 +52,27 @@ class ConversionDB:
             Dict with columns: id, source_path, dest_path, job_type, command,
             status, error_msg, stdout, timestamp. Or None if no row exists.
         """
-        cursor = self._conn.execute(
-            "SELECT id, source_path, dest_path, job_type, command, status, "
-            "       error_msg, stdout, timestamp "
-            "FROM history WHERE source_path = ? AND dest_path = ?",
-            (source, dest),
-        )
-        row = cursor.fetchone()
-        if row is None:
-            return None
-        return {
-            "id": row[0],
-            "source_path": row[1],
-            "dest_path": row[2],
-            "job_type": row[3],
-            "command": row[4],
-            "status": row[5],
-            "error_msg": row[6],
-            "stdout": row[7],
-            "timestamp": row[8],
-        }
+        with self._lock:
+            cursor = self._conn.execute(
+                "SELECT id, source_path, dest_path, job_type, command, status, "
+                "       error_msg, stdout, timestamp "
+                "FROM history WHERE source_path = ? AND dest_path = ?",
+                (source, dest),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                return None
+            return {
+                "id": row[0],
+                "source_path": row[1],
+                "dest_path": row[2],
+                "job_type": row[3],
+                "command": row[4],
+                "status": row[5],
+                "error_msg": row[6],
+                "stdout": row[7],
+                "timestamp": row[8],
+            }
 
     def log_conversion(
         self,
@@ -95,14 +99,15 @@ class ConversionDB:
             error_msg: Optional error message for failed jobs.
             stdout: Optional captured stdout for the job.
         """
-        timestamp = datetime.now(timezone.utc).isoformat()
-        self._conn.execute(
-            "INSERT OR REPLACE INTO history "
-            "  (source_path, dest_path, job_type, command, status, error_msg, stdout, timestamp) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (source, dest, job_type, command, status, error_msg, stdout, timestamp),
-        )
-        self._conn.commit()
+        with self._lock:
+            timestamp = datetime.now(timezone.utc).isoformat()
+            self._conn.execute(
+                "INSERT OR REPLACE INTO history "
+                "  (source_path, dest_path, job_type, command, status, error_msg, stdout, timestamp) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (source, dest, job_type, command, status, error_msg, stdout, timestamp),
+            )
+            self._conn.commit()
 
     def should_skip(
         self, source: str, dest: str, job_type: str, dest_file_exists: bool
@@ -126,12 +131,13 @@ class ConversionDB:
         """
         if not dest_file_exists:
             return False
-        cursor = self._conn.execute(
-            "SELECT status FROM history "
-            "WHERE source_path = ? AND dest_path = ? AND job_type = ?",
-            (source, dest, job_type),
-        )
-        row = cursor.fetchone()
-        if row is None:
-            return False
-        return row[0] == "SUCCESS"
+        with self._lock:
+            cursor = self._conn.execute(
+                "SELECT status FROM history "
+                "WHERE source_path = ? AND dest_path = ? AND job_type = ?",
+                (source, dest, job_type),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                return False
+            return row[0] == "SUCCESS"
