@@ -35,3 +35,8 @@ class BackendError(Exception):
 
     def __init__(self, message: str) -> None:
         super().__init__(message)
+
+
+class IndexError(Exception):
+    """Raised when the temporary index database cannot be created, opened, or written."""
+    pass

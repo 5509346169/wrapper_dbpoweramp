@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from audio.inspector import probe_many
+from index.scanner import IndexRow
 from models.types import ConversionJob, LossyAction, PresetConfig
 from pathing.resolver import compute_output_path
 
@@ -47,6 +48,8 @@ def build_jobs(
     no_lossy_check: bool,
     ffprobe_binary: str,
     probe_workers: int,
+    index_rows_out: list[IndexRow] | None = None,
+    sidecar_map: dict[Path, str] | None = None,
 ) -> tuple[list[ConversionJob], list[Path]]:
     """
     Build ConversionJob list from discovered audio files.
@@ -61,6 +64,11 @@ def build_jobs(
         no_lossy_check: If True, skip lossy probing entirely.
         ffprobe_binary: Path to the ffprobe binary.
         probe_workers: Number of workers for parallel probing.
+        index_rows_out: If provided, enriched IndexRow entries (with final
+            ``dest_path`` and ``job_type``) are appended here for the temp
+            index database. Pass ``None`` to skip index enrichment entirely.
+        sidecar_map: If provided, maps each source ``Path`` to its
+            newline-joined sidecar basenames (precomputed by the scanner).
 
     Returns:
         A tuple of (jobs, lossy_files_found) where:
@@ -116,5 +124,18 @@ def build_jobs(
             reason=reason,
         )
         jobs.append(job)
+
+        if index_rows_out is not None and sidecar_map is not None:
+            stat = f.stat()
+            index_rows_out.append(
+                IndexRow(
+                    source_path=str(f),
+                    dest_path=str(outfile),
+                    job_type=job_type,
+                    file_size=stat.st_size,
+                    sidecar_files=sidecar_map.get(f, ""),
+                    mtime=stat.st_mtime,
+                )
+            )
 
     return (jobs, lossy_files_found)

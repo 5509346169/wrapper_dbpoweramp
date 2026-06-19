@@ -60,9 +60,24 @@ def parse_args(argv: list[str] | None = None) -> "Namespace":
     )
     parser.add_argument(
         "--backend",
-        choices=["wine_dbpoweramp", "native_ffmpeg"],
+        choices=["wine_dbpoweramp", "native_dbpoweramp", "native_ffmpeg"],
         metavar="NAME",
         help="Override backend (default: from settings.yaml)",
+    )
+    backend_auto_group = parser.add_mutually_exclusive_group()
+    backend_auto_group.add_argument(
+        "--auto-detect-backend",
+        action="store_true",
+        dest="auto_detect_backend",
+        default=None,
+        help="Enable automatic backend detection (overrides --backend)",
+    )
+    backend_auto_group.add_argument(
+        "--no-auto-detect-backend",
+        action="store_false",
+        dest="auto_detect_backend",
+        default=None,
+        help="Disable automatic backend detection",
     )
     parser.add_argument(
         "--lossy-action",

@@ -34,11 +34,20 @@ class NativeBackendConfig:
 
 
 @dataclass
+class NativeDbpowerampConfig:
+    """Native dBpoweramp backend: path to CoreConverter.exe on Windows."""
+
+    coreconverter_path: str
+
+
+@dataclass
 class BackendConfig:
     """Combined backend config: default plus per-backend sub-configs."""
 
     default: str
+    auto_detect: bool
     wine_dbpoweramp: WineBackendConfig
+    native_dbpoweramp: NativeDbpowerampConfig
     native_ffmpeg: NativeBackendConfig
 
 
@@ -87,7 +96,7 @@ class Settings:
 # Helpers
 # ---------------------------------------------------------------------------
 
-_VALID_BACKENDS = {"wine_dbpoweramp", "native_ffmpeg"}
+_VALID_BACKENDS = {"wine_dbpoweramp", "native_dbpoweramp", "native_ffmpeg"}
 _VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR"}
 _VALID_WORKER_MODELS = {"thread", "process"}
 
@@ -121,6 +130,15 @@ def _int(data: dict[str, Any], key: str, path: str, min_val: int = 1) -> int:
     return val
 
 
+def _bool(data: dict[str, Any], key: str, path: str, default: bool) -> bool:
+    val = data.get(key)
+    if val is None:
+        return default
+    if not isinstance(val, bool):
+        _raise(f"'{path}' must be a bool, got {type(val).__name__}")
+    return val
+
+
 def _str_enum(data: dict[str, Any], key: str, path: str, valid: set[str]) -> str:
     val = _str(data, key, path, allow_empty=False)
     if val not in valid:
@@ -149,6 +167,18 @@ def load_settings(path: Path | str) -> Settings:
 
     default = _str_enum(backend_data, "default", "backend.default", _VALID_BACKENDS)
 
+    auto_detect = _bool(backend_data, "auto_detect", "backend.auto_detect", default=True)
+
+    nd = backend_data.get("native_dbpoweramp", {})
+    if not isinstance(nd, dict):
+        nd = {}
+    nd_path = nd.get("coreconverter_path")
+    native_dbpoweramp = NativeDbpowerampConfig(
+        coreconverter_path=_str(nd, "coreconverter_path", "backend.native_dbpoweramp.coreconverter_path", allow_empty=False)
+        if nd_path
+        else "C:\\Program Files\\dBpoweramp\\CoreConverter.exe",
+    )
+
     wd = _get(backend_data, "wine_dbpoweramp", "backend.wine_dbpoweramp")
     wine_dbpoweramp = WineBackendConfig(
         wine_binary=_str(wd, "wine_binary", "backend.wine_dbpoweramp.wine_binary", allow_empty=False),
@@ -167,7 +197,9 @@ def load_settings(path: Path | str) -> Settings:
 
     backend = BackendConfig(
         default=default,
+        auto_detect=auto_detect,
         wine_dbpoweramp=wine_dbpoweramp,
+        native_dbpoweramp=native_dbpoweramp,
         native_ffmpeg=native_ffmpeg,
     )
 

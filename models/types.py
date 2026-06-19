@@ -7,9 +7,10 @@ from typing import Literal, Optional
 
 
 class Backend(str, Enum):
-    """Conversion backend: wine_dbpoweramp or native_ffmpeg."""
+    """Conversion backend: wine_dbpoweramp, native_dbpoweramp, or native_ffmpeg."""
 
     WINE_DBPOWERAMP = "wine_dbpoweramp"
+    NATIVE_DBPOWERAMP = "native_dbpoweramp"
     NATIVE_FFMPEG = "native_ffmpeg"
 
 

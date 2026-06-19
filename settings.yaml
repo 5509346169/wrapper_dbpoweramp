@@ -1,6 +1,8 @@
 backend:
   default: "native_ffmpeg"        # "wine_dbpoweramp" | "native_ffmpeg" — used if --backend not passed
-
+  auto_detect: true               # auto-detect Windows vs Wine environment (Windows=native_dbpoweramp, Linux/Mac=Wine)
+  native_dbpoweramp:
+    coreconverter_path: "C:\\Program Files\\dBpoweramp\\CoreConverter.exe"
   wine_dbpoweramp:
     wine_binary: "wine"
     wine_prefix: "~/.wine-dbpoweramp"          # WINEPREFIX env var value

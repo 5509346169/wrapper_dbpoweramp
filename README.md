@@ -102,14 +102,68 @@ Output lands at `~/Converted/Artist/Album/` instead of directly in `~/Converted/
 
 | Preset | Output | Backends |
 |--------|--------|----------|
-| `flac-lossless` | FLAC (compression level 5) | native_ffmpeg, wine_dbpoweramp |
-| `mp3-v0-vbr` | MP3 V0 | native_ffmpeg, wine_dbpoweramp |
-| `mp3-320-cbr` | MP3 320 kbps | native_ffmpeg, wine_dbpoweramp |
-| `aac-vbr-high` | AAC VBR high quality | native_ffmpeg, wine_dbpoweramp |
+| `flac-lossless` | FLAC (compression level 5) | native_ffmpeg, native_dbpoweramp, wine_dbpoweramp |
+| `mp3-v0-vbr` | MP3 V0 | native_ffmpeg, native_dbpoweramp, wine_dbpoweramp |
+| `mp3-320-cbr` | MP3 320 kbps | native_ffmpeg, native_dbpoweramp, wine_dbpoweramp |
+| `aac-vbr-high` | AAC VBR high quality | native_ffmpeg, native_dbpoweramp, wine_dbpoweramp |
 | `qaac-cvbr-256` | AAC 256 kbps via QAAC | wine_dbpoweramp only |
-| `opus-128` | Opus 128 kbps | native_ffmpeg, wine_dbpoweramp |
+| `opus-128` | Opus 128 kbps | native_ffmpeg, native_dbpoweramp, wine_dbpoweramp |
 
 `native_ffmpeg` is the default backend (set in `settings.yaml`). Override with `--backend`.
+
+---
+
+## Windows Support
+
+This wrapper runs natively on Windows without Wine. On `sys.platform == "win32"`, automatic
+backend detection (`backend.auto_detect: true` in `settings.yaml`) picks the best backend
+for each preset, preferring `native_dbpoweramp` (the real dBpoweramp CoreConverter.exe) over
+`native_ffmpeg` for every preset that supports it (all except `qaac-cvbr-256`, which requires
+the Apple-only `CoreAudioToolbox.dll` and stays on `wine_dbpoweramp`).
+
+### Configuration
+
+In `settings.yaml`, the `backend:` block declares the native dBpoweramp install location and
+the auto-detect toggle:
+
+```yaml
+backend:
+  default: "native_ffmpeg"
+  auto_detect: true
+  native_dbpoweramp:
+    coreconverter_path: "C:\\Program Files\\dBpoweramp\\CoreConverter.exe"
+```
+
+Adjust `coreconverter_path` to wherever dBpoweramp is installed on the machine.
+
+### Resolution order
+
+For each run, the wrapper picks the backend as follows:
+
+1. If `--backend NAME` is given on the command line, that wins outright.
+2. Otherwise, if `auto_detect` is enabled and the platform is Windows, and the selected
+   preset has a `native_dbpoweramp` block, use `native_dbpoweramp`.
+3. Otherwise, fall back to `backend.default` from `settings.yaml`.
+
+`--auto-detect-backend` and `--no-auto-detect-backend` flip the auto-detect toggle for a
+single run without editing `settings.yaml`. The two flags are mutually exclusive; default
+(neither given) defers to `settings.yaml`.
+
+### Backends on Windows
+
+- `native_dbpoweramp` — invokes `CoreConverter.exe` directly, no Wine layer. Default for
+  all presets except `qaac-cvbr-256`.
+- `native_ffmpeg` — falls back to native ffmpeg for presets where dBpoweramp is not desired.
+- `wine_dbpoweramp` — still works on Windows if Wine is installed, but rarely useful.
+- `qaac-cvbr-256` does **not** support `native_dbpoweramp` (QAAC is Apple-only).
+
+### Windows installation tips
+
+- Python 3.10+ is recommended; install `pyyaml` and `rich` via pip.
+- Install dBpoweramp Reference using the official Windows installer; the path defaults to
+  `C:\Program Files\dBpoweramp\CoreConverter.exe`.
+- No Wine, no `WINEPREFIX`, no path translation — paths are passed verbatim to
+  `CoreConverter.exe`.
 
 ---
 
@@ -121,7 +175,9 @@ Output lands at `~/Converted/Artist/Album/` instead of directly in `~/Converted/
 | `-O, --output PATH` | yes | Output root directory |
 | `-p, --preset NAME` | yes | Preset name from `presets.yaml` (e.g. `flac-lossless`, `mp3-320-cbr`) |
 | `--source-path PATH` | no | Root for relative-path math; `--input` must be inside it |
-| `--backend NAME` | no | `wine_dbpoweramp` or `native_ffmpeg`; overrides `settings.yaml` default |
+| `--backend NAME` | no | `wine_dbpoweramp`, `native_dbpoweramp`, or `native_ffmpeg`; overrides `settings.yaml` default |
+| `--auto-detect-backend` | no | Force auto-detection for this run (overrides `--backend` if both are compatible) |
+| `--no-auto-detect-backend` | no | Force-disable auto-detection for this run |
 | `--lossy-action ACTION` | conditional | `leave` (skip), `copy` (pass through), `convert` (transcode). **Required if any lossy source files are found.** |
 | `--no-lossy-check` | no | Disable ffprobe lossy detection entirely |
 | `-w, --workers N` | no | Override thread/process pool size (default from `settings.yaml`) |
@@ -169,6 +225,52 @@ Lyric and cover-art files are copied alongside converted audio files per the pre
 `sidecars` block in `presets.yaml`. When `hide: true` (the default for covers), the cover is
 renamed to a dot-prefixed name (e.g. `cover.jpg` → `.cover.jpg`) so it is hidden in
 standard file browsers.
+
+---
+
+## File index
+
+Every run builds a temporary snapshot of the discovered files in `tmp/index.db` (a SQLite
+database) before the lossy gate runs. Each row contains the source path, the planned
+destination path, the resolved `job_type` (`convert` / `copy` / `skip`), the file size,
+the sidecar basenames that were detected alongside the source, and the source mtime. This
+is useful for post-mortem debugging — if a run fails, you can inspect what was *about* to
+happen rather than only what eventually did.
+
+### When is the index kept?
+
+| Outcome | `tmp/index.db` |
+|---------|----------------|
+| All jobs succeeded, no Ctrl+C | **Deleted** automatically |
+| Any job failed (or exception) | **Preserved**, with a hint printed to stderr |
+| Run interrupted with Ctrl+C / SIGTERM | **Preserved**, with a hint printed to stderr |
+
+The cleanup decision is made in the `finally:` block of `main._main` so it runs on every
+exit path (return, `sys.exit`, exception, signal).
+
+### Inspecting a preserved index
+
+```sh
+sqlite3 tmp/index.db "SELECT source_path, dest_path, job_type, file_size, sidecar_files, mtime FROM index_entries LIMIT 10;"
+```
+
+The `index_entries` table schema:
+
+```sql
+CREATE TABLE index_entries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_path  TEXT NOT NULL,
+    dest_path    TEXT NOT NULL,
+    job_type     TEXT NOT NULL,
+    file_size    INTEGER NOT NULL,
+    sidecar_files TEXT NOT NULL,
+    mtime        REAL NOT NULL,
+    created_at   TEXT NOT NULL
+)
+```
+
+The `tmp/` directory is gitignored, so preserved index files never accidentally enter a
+commit. To clear a stale index manually, just delete `tmp/index.db`.
 
 ---
 

@@ -1,5 +1,6 @@
 """backends/registry.py: Factory for ConversionBackend instances with fail-fast environment validation."""
 
+from backends.native_dbpoweramp import NativeDbpowerampBackend
 from backends.native_ffmpeg import NativeFfmpegBackend
 from backends.wine_dbpoweramp import WineDbpowerampBackend
 from config.settings_loader import Settings
@@ -34,6 +35,42 @@ def resolve_backend_for_run(cli_backend: Backend | None, settings: Settings) -> 
         raise UnknownBackendError(default_str)
 
 
+def detect_backend_for_run(
+    cli_backend: Backend | None,
+    settings: Settings,
+    preset: "PresetConfig",
+    platform: str,
+    auto_detect_override: bool | None = None,
+) -> Backend:
+    """Resolve the effective Backend for a run using the following priority:
+
+    1. If ``cli_backend`` is not None, return it immediately (CLI wins).
+    2. Resolve ``auto_detect`` — use ``auto_detect_override`` if provided,
+       otherwise fall back to ``settings.backend.auto_detect``.
+    3. If ``auto_detect`` is True **and** the platform is ``"win32"``
+       **and** ``Backend.NATIVE_DBPOWERAMP`` is in ``preset.backends``,
+       return ``Backend.NATIVE_DBPOWERAMP``.
+    4. Otherwise delegate to :func:`resolve_backend_for_run`.
+    """
+    if cli_backend is not None:
+        return cli_backend
+
+    auto_detect = (
+        auto_detect_override
+        if auto_detect_override is not None
+        else settings.backend.auto_detect
+    )
+
+    if (
+        auto_detect
+        and platform == "win32"
+        and Backend.NATIVE_DBPOWERAMP in preset.backends
+    ):
+        return Backend.NATIVE_DBPOWERAMP
+
+    return resolve_backend_for_run(None, settings)
+
+
 def get_backend(name: Backend, settings: Settings) -> "ConversionBackend":
     """Instantiate and return the requested ConversionBackend.
 
@@ -60,6 +97,8 @@ def get_backend(name: Backend, settings: Settings) -> "ConversionBackend":
         backend = NativeFfmpegBackend(settings)
     elif name == Backend.WINE_DBPOWERAMP:
         backend = WineDbpowerampBackend(settings)
+    elif name == Backend.NATIVE_DBPOWERAMP:
+        backend = NativeDbpowerampBackend(settings)
     else:
         raise UnknownBackendError(name.value if isinstance(name, Backend) else str(name))
 

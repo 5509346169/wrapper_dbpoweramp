@@ -135,7 +135,7 @@ def load_presets(path: Path | str) -> dict[str, PresetConfig]:
 
         backends: dict[Backend, BackendPresetArgs] = {}
 
-        for backend_key in ("wine_dbpoweramp", "native_ffmpeg"):
+        for backend_key in ("wine_dbpoweramp", "native_ffmpeg", "native_dbpoweramp"):
             args = _build_backend_args(backends_data.get(backend_key))
             if args is not None:
                 backends[Backend(backend_key)] = args
