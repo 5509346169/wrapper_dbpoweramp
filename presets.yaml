@@ -1,0 +1,83 @@
+presets:
+  flac-lossless:
+    ext: ".flac"
+    backends:
+      wine_dbpoweramp:
+        encoder: "FLAC"
+        args: ["-compression-level-5", "-verify"]
+      native_ffmpeg:
+        tool: "ffmpeg"                       # or "flac" to use the standalone CLI instead
+        args: ["-c:a", "flac", "-compression_level", "5"]
+    sidecars:
+      lyrics:
+        copy: true
+        extensions: [".lrc", ".txt"]
+        hide: false
+      covers:
+        copy: true
+        patterns: ["cover.jpg", "cover.png", "folder.jpg", "albumart.jpg"]
+        hide: true                            # → copied as ".cover.jpg" etc.
+
+  mp3-v0-vbr:
+    ext: ".mp3"
+    backends:
+      wine_dbpoweramp:
+        encoder: "mp3 (LAME)"
+        args: ["-V 0", "-encoding=\"SLOW\""]
+      native_ffmpeg:
+        tool: "ffmpeg"
+        args: ["-c:a", "libmp3lame", "-q:a", "0"]
+    sidecars:
+      lyrics: { copy: true, extensions: [".lrc", ".txt"], hide: false }
+      covers: { copy: true, patterns: ["cover.jpg", "cover.png", "folder.jpg", "albumart.jpg"], hide: true }
+
+  mp3-320-cbr:
+    ext: ".mp3"
+    backends:
+      wine_dbpoweramp:
+        encoder: "mp3 (LAME)"
+        args: ["-b 320"]
+      native_ffmpeg:
+        tool: "ffmpeg"
+        args: ["-c:a", "libmp3lame", "-b:a", "320k"]
+    sidecars:
+      lyrics: { copy: true, extensions: [".lrc", ".txt"], hide: false }
+      covers: { copy: true, patterns: ["cover.jpg", "cover.png", "folder.jpg", "albumart.jpg"], hide: true }
+
+  aac-vbr-high:
+    ext: ".m4a"
+    backends:
+      wine_dbpoweramp:
+        encoder: "m4a FDK (AAC)"
+        args: ["-m 5"]
+      native_ffmpeg:
+        tool: "ffmpeg"
+        args: ["-c:a", "libfdk_aac", "-vbr", "5"]   # requires ffmpeg build with libfdk_aac
+        requires_encoder: "libfdk_aac"               # checked via `ffmpeg -encoders` before running
+    sidecars:
+      lyrics: { copy: true, extensions: [".lrc", ".txt"], hide: false }
+      covers: { copy: true, patterns: ["cover.jpg", "cover.png", "folder.jpg", "albumart.jpg"], hide: true }
+
+  qaac-cvbr-256:
+    ext: ".m4a"
+    backends:
+      wine_dbpoweramp:
+        encoder: "m4a QAAC (iTunes)"
+        args: ["-cbr_vbr=\"cVBR\"", "-bitrate=\"256\"", "-codec=\"LC AAC\"", "-keepsr"]
+        # NOTE: no native_ffmpeg block — this preset is Wine-only by design (see overview doc §6)
+    sidecars:
+      lyrics: { copy: true, extensions: [".lrc", ".txt"], hide: false }
+      covers: { copy: true, patterns: ["cover.jpg", "cover.png", "folder.jpg", "albumart.jpg"], hide: true }
+
+  opus-128:
+    ext: ".opus"
+    backends:
+      wine_dbpoweramp:
+        encoder: "Opus"
+        args: ["-bitrate 128"]
+      native_ffmpeg:
+        tool: "ffmpeg"
+        args: ["-c:a", "libopus", "-b:a", "128k"]
+    sidecars:
+      lyrics: { copy: true, extensions: [".lrc", ".txt"], hide: false }
+      covers: { copy: true, patterns: ["cover.jpg", "cover.png", "folder.jpg", "albumart.jpg"], hide: true }

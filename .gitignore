@@ -1,0 +1,39 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# SQLite databases (history DB + any --db override)
+*.db
+*.sqlite
+*.sqlite3
+
+# Common output directory names (-O / --output)
+# Remove/comment these if you use output dirs that match these names
+output/
+converted/
+
+# Virtual environments
+.venv/
+venv/
+env/
+.env/
+
+# Test / coverage artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# IDE / editor state
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+./test/
