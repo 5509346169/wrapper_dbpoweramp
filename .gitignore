@@ -36,4 +36,4 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
-./test/fixtures/
+./test/fixtures/*
