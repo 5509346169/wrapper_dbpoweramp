@@ -52,8 +52,9 @@ WINEPREFIX=~/.wine-dbpoweramp wine /path/to/dBpowerampReference食用.exe
 ```
 
 Note: the `qaac-cvbr-256` preset requires Apple's `CoreAudioToolbox.dll` from an iTunes install
-inside the same prefix. This is a known fragility — if the DLL is absent, the preset fails
-with a clear error from QAAC itself. This is not a bug in the wrapper.
+(under Wine, install inside the Wine prefix; under native Windows, install alongside dBpoweramp
+and ensure the QAAC encoder is registered). This is a known fragility — if the DLL is absent,
+the preset fails with a clear error from QAAC itself. This is not a bug in the wrapper.
 
 ---
 
@@ -106,7 +107,7 @@ Output lands at `~/Converted/Artist/Album/` instead of directly in `~/Converted/
 | `mp3-v0-vbr` | MP3 V0 | native_ffmpeg, native_dbpoweramp, wine_dbpoweramp |
 | `mp3-320-cbr` | MP3 320 kbps | native_ffmpeg, native_dbpoweramp, wine_dbpoweramp |
 | `aac-vbr-high` | AAC VBR high quality | native_ffmpeg, native_dbpoweramp, wine_dbpoweramp |
-| `qaac-cvbr-256` | AAC 256 kbps via QAAC | wine_dbpoweramp only |
+| `qaac-cvbr-256` | AAC 256 kbps via QAAC | wine_dbpoweramp, native_dbpoweramp (requires manual QAAC install) |
 | `opus-128` | Opus 128 kbps | native_ffmpeg, native_dbpoweramp, wine_dbpoweramp |
 
 `native_ffmpeg` is the default backend (set in `settings.yaml`). Override with `--backend`.

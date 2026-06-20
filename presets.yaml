@@ -73,10 +73,17 @@ presets:
   qaac-cvbr-256:
     ext: ".m4a"
     backends:
+      # NOTE on QAAC: this preset targets Apple's QAAC encoder. Under Wine,
+      # the QAAC bundle inside the dBpoweramp Wine prefix provides it natively.
+      # On native Windows, dBpoweramp does NOT bundle QAAC by default — you
+      # must install it manually (requires Apple's CoreAudioToolbox.dll from
+      # an iTunes install) for the native_dbpoweramp block to function.
       wine_dbpoweramp:
         encoder: "m4a QAAC (iTunes)"
         args: ["-cbr_vbr=\"cVBR\"", "-bitrate=\"256\"", "-codec=\"LC AAC\"", "-keepsr"]
-        # NOTE: no native_ffmpeg block — this preset is Wine-only by design (see overview doc §6)
+      native_dbpoweramp:
+        encoder: "m4a QAAC (iTunes)"
+        args: ["-cbr_vbr=\"cVBR\"", "-bitrate=\"256\"", "-codec=\"LC AAC\"", "-keepsr"]
     sidecars:
       lyrics: { copy: true, extensions: [".lrc", ".txt"], hide: false }
       covers: { copy: true, patterns: ["cover.jpg", "cover.png", "folder.jpg", "albumart.jpg"], hide: true }
