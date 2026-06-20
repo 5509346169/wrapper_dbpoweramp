@@ -16,8 +16,8 @@ from history.db import ConversionDB
 from index.builder import IndexBuilder
 from index.cleanup import cleanup_index
 from index.scanner import AUDIO_EXTENSIONS as _AUDIO_EXTS, IndexRow, scan_with_progress
-from jobs.builder import build_jobs, discover_audio_files
-from models.types import Backend, LossyAction
+from jobs.builder import build_jobs, discover_audio_files, enrich_index_rows
+from models.types import Backend, ConversionJob, LossyAction
 from pathing.resolver import validate_source_path
 from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn
 from ui.progress_view import ProgressView
@@ -97,7 +97,6 @@ def _main() -> None:
         tmp_dir = None  # type: ignore[assignment]
 
     index_db_path: Path | None = tmp_dir / "index.db" if tmp_dir is not None else None
-    index_rows: list[IndexRow] = []
 
     # 6. Install signal handlers so we can keep the index on Ctrl+C / SIGTERM.
     old_sigint = signal.signal(signal.SIGINT, _signal_handler)
@@ -107,7 +106,10 @@ def _main() -> None:
     exc_info: str | None = None
 
     try:
-        # 7. Scan phase with a progress bar (replaces the silent rglob walk).
+        # 7. Scan phase with a progress bar.
+        # We need the total count before opening the progress bar (rich requires
+        # total up front), so we do a single lightweight rglob just for the count,
+        # then the real scan_with_progress walk does the actual stat() work.
         print("[cyan]Scanning...[/cyan]", end="", flush=True)
         if args.input.is_file():
             total_files = 1
@@ -133,14 +135,13 @@ def _main() -> None:
                 scan_task=scan_task,
             )
 
-        files = [Path(r.source_path) for r in rows]
-        print(f" [green]{len(files)} file(s) found[/green]")
+        print(f" [green]{len(rows)} file(s) found[/green]")
 
-        if not files:
+        if not rows:
             print("No audio files found.")
             return
 
-        # Determine input_root and source_root for job building
+        # Determine input_root and source_root for path computation.
         input_root: Path
         source_root: Path | None
 
@@ -154,13 +155,14 @@ def _main() -> None:
         else:
             source_root = None
 
-        # 8. Build jobs (and enrich index rows in the same pass)
+        # 8. Enrich index rows: lossy probe + output path + job type.
+        #    This mutates each row in place (fills is_lossy, dest_path, job_type).
         lossy_action: LossyAction | None = None
         if args.lossy_action is not None:
             lossy_action = LossyAction(args.lossy_action)
 
-        jobs, lossy_files_found = build_jobs(
-            files=files,
+        lossy_files_found = enrich_index_rows(
+            rows=rows,
             input_root=input_root,
             source_root=source_root,
             output_root=args.output,
@@ -169,21 +171,48 @@ def _main() -> None:
             no_lossy_check=args.no_lossy_check,
             ffprobe_binary=settings.tools.ffprobe_binary,
             probe_workers=settings.execution.probe_workers,
-            index_rows_out=index_rows,
-            sidecar_map=sidecar_map,
         )
 
-        # 9. Persist the index snapshot BEFORE the lossy gate so even
-        #    skipped files appear in the post-mortem artifact.
-        if index_db_path is not None and index_rows:
+        # 9. Persist the enriched index snapshot to SQLite.
+        #    The DB is the single source of truth from this point forward.
+        if index_db_path is not None:
             try:
                 with IndexBuilder(index_db_path) as ib:
-                    ib.add_many(index_rows)
+                    ib.add_many(rows)
                 print(f"[cyan]Index:[/cyan] {index_db_path}")
             except OSError as exc:
                 print(f"warning: could not write index DB {index_db_path}: {exc}", file=sys.stderr)
 
-        # 10. Lossy gate
+        # 10. Build the ConversionJob list from the enriched rows (in memory).
+        #    The DB is the source of truth for the real execution path; we build
+        #    the list here so --dry-run and --list-lossy can also use it.
+        def _row_to_job(row: IndexRow) -> ConversionJob:
+            is_lossy_val = row.is_lossy
+            if args.no_lossy_check:
+                reason = None
+            elif is_lossy_val:
+                if lossy_action is None:
+                    reason = "lossy source, action=abort"
+                elif lossy_action == LossyAction.LEAVE:
+                    reason = "lossy source, action=leave"
+                elif lossy_action == LossyAction.COPY:
+                    reason = "lossy source, action=copy"
+                else:
+                    reason = "lossy source, action=convert"
+            else:
+                reason = None
+            return ConversionJob(
+                infile=Path(row.source_path),
+                outfile=Path(row.dest_path),
+                preset=preset,
+                job_type=row.job_type,
+                is_lossy_source=is_lossy_val,
+                reason=reason,
+            )
+
+        jobs = [_row_to_job(r) for r in rows]
+
+        # 11. Lossy gate
         if (
             lossy_files_found
             and args.lossy_action is None

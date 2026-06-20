@@ -231,11 +231,18 @@ standard file browsers.
 ## File index
 
 Every run builds a temporary snapshot of the discovered files in `tmp/index.db` (a SQLite
-database) before the lossy gate runs. Each row contains the source path, the planned
-destination path, the resolved `job_type` (`convert` / `copy` / `skip`), the file size,
-the sidecar basenames that were detected alongside the source, and the source mtime. This
-is useful for post-mortem debugging — if a run fails, you can inspect what was *about* to
-happen rather than only what eventually did.
+database) before the lossy gate runs. The database is the **single source of truth** for the
+conversion step: after the scan, rows are enriched with `dest_path`, `job_type`, and
+`is_lossy`, written to SQLite, and then read back to build the `ConversionJob` list that
+feeds the converter. This means:
+
+- The index is not merely a post-mortem artifact — it is the working set.
+- `is_lossy` (ffprobe's codec classification) is persisted per row so a future resume
+  mechanism can skip the re-probe pass for already-probed files.
+
+Each row contains the source path, the planned destination path, the resolved `job_type`
+(`convert` / `copy` / `skip`), the file size, the sidecar basenames detected alongside
+the source, the source mtime, and the lossy probe result.
 
 ### When is the index kept?
 
@@ -251,7 +258,7 @@ exit path (return, `sys.exit`, exception, signal).
 ### Inspecting a preserved index
 
 ```sh
-sqlite3 tmp/index.db "SELECT source_path, dest_path, job_type, file_size, sidecar_files, mtime FROM index_entries LIMIT 10;"
+sqlite3 tmp/index.db "SELECT source_path, dest_path, job_type, is_lossy, file_size FROM index_entries LIMIT 10;"
 ```
 
 The `index_entries` table schema:
@@ -265,9 +272,13 @@ CREATE TABLE index_entries (
     file_size    INTEGER NOT NULL,
     sidecar_files TEXT NOT NULL,
     mtime        REAL NOT NULL,
+    is_lossy     INTEGER,        -- 0/1, NULL = not probed (--no-lossy-check)
     created_at   TEXT NOT NULL
 )
 ```
+
+`is_lossy` is `1` for lossy sources (e.g. MP3, AAC), `0` for lossless (e.g. FLAC),
+and `NULL` when `--no-lossy-check` was used.
 
 The `tmp/` directory is gitignored, so preserved index files never accidentally enter a
 commit. To clear a stale index manually, just delete `tmp/index.db`.

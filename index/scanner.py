@@ -22,6 +22,7 @@ class IndexRow:
     file_size: int
     sidecar_files: str
     mtime: float
+    is_lossy: Optional[bool] = None
 
 
 def _discover_audio_files(input_path: Path, excludes: list[str]) -> list[Path]:

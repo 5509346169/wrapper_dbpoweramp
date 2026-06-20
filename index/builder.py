@@ -4,6 +4,7 @@ import sqlite3
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Iterator, Optional
 
 try:
     from index.scanner import IndexRow
@@ -18,6 +19,7 @@ except ImportError:
         file_size: int
         sidecar_files: str
         mtime: float
+        is_lossy: Optional[bool] = None
 
 
 class IndexBuilder:
@@ -45,9 +47,16 @@ class IndexBuilder:
                 "    file_size INTEGER NOT NULL,"
                 "    sidecar_files TEXT NOT NULL,"
                 "    mtime REAL NOT NULL,"
+                "    is_lossy INTEGER,"
                 "    created_at TEXT NOT NULL"
                 ")"
             )
+            # Migration: add is_lossy to tables created by older versions.
+            try:
+                self._conn.execute("ALTER TABLE index_entries ADD COLUMN is_lossy INTEGER")
+            except sqlite3.OperationalError:
+                # Column already exists — nothing to do.
+                pass
             self._conn.commit()
 
     def add(self, row: IndexRow) -> None:
@@ -59,8 +68,8 @@ class IndexBuilder:
         with self._lock:
             self._conn.execute(
                 "INSERT INTO index_entries "
-                "(source_path, dest_path, job_type, file_size, sidecar_files, mtime, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "(source_path, dest_path, job_type, file_size, sidecar_files, mtime, is_lossy, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     row.source_path,
                     row.dest_path,
@@ -68,6 +77,7 @@ class IndexBuilder:
                     row.file_size,
                     row.sidecar_files,
                     row.mtime,
+                    None if row.is_lossy is None else int(row.is_lossy),
                     datetime.now(timezone.utc).isoformat(),
                 ),
             )
@@ -89,6 +99,7 @@ class IndexBuilder:
                 row.file_size,
                 row.sidecar_files,
                 row.mtime,
+                None if row.is_lossy is None else int(row.is_lossy),
                 timestamp,
             )
             for row in rows
@@ -96,9 +107,28 @@ class IndexBuilder:
         with self._lock:
             self._conn.executemany(
                 "INSERT INTO index_entries "
-                "(source_path, dest_path, job_type, file_size, sidecar_files, mtime, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "(source_path, dest_path, job_type, file_size, sidecar_files, mtime, is_lossy, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 data,
+            )
+
+    def iter_rows(self) -> Iterator[IndexRow]:
+        """Yield all rows in insertion order (id ASC)."""
+        with self._lock:
+            cur = self._conn.execute(
+                "SELECT source_path, dest_path, job_type, file_size, sidecar_files, mtime, is_lossy "
+                "FROM index_entries ORDER BY id"
+            )
+            rows = cur.fetchall()
+        for row in rows:
+            yield IndexRow(
+                source_path=row[0],
+                dest_path=row[1],
+                job_type=row[2],
+                file_size=row[3],
+                sidecar_files=row[4],
+                mtime=row[5],
+                is_lossy=None if row[6] is None else bool(row[6]),
             )
 
     def commit(self) -> None:
