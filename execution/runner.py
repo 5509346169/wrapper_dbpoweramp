@@ -14,11 +14,9 @@ from sidecars.manager import copy_covers, copy_lyrics
 def run_job(
     job: ConversionJob,
     backend: ConversionBackend,
-    db: ConversionDB,
+    db_path: str,
     force: bool,
     stream_callback: Optional[Callable[[str], None]],
-    progress: Any,
-    master_task: Any,
 ) -> JobResult:
     """
     Execute a single ConversionJob.
@@ -26,15 +24,14 @@ def run_job(
     Args:
         job: The conversion job to execute.
         backend: The conversion backend to use.
-        db: The history database for logging and resume checks.
+        db_path: Path to the history SQLite database.
         force: If True, skip resume checks and force re-processing.
         stream_callback: Optional callback for streaming output line-by-line.
-        progress: Optional rich.progress.Progress instance.
-        master_task: Optional rich.progress.TaskID for the master progress task.
 
     Returns:
         JobResult with status SUCCESS, SKIPPED, or FAILED.
     """
+    db = ConversionDB(Path(db_path))
     if job.job_type == "skip":
         return JobResult(
             job=job,
@@ -141,7 +138,7 @@ def run_all(
 
     with ExecutorCls(max_workers=workers) as executor:
         futures = {
-            executor.submit(run_job, job, backend, db, force, stream_cb, progress, master_task): job
+            executor.submit(run_job, job, backend, str(db.db_path), force, stream_cb): job
             for job in jobs
         }
 
