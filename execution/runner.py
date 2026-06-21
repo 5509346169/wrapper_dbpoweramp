@@ -107,6 +107,7 @@ def run_all(
     verbose: bool,
     progress: Any,
     master_task: Any,
+    progress_view: Any | None = None,
 ) -> dict[str, int]:
     """
     Execute a list of ConversionJobs using a thread or process pool.
@@ -121,6 +122,7 @@ def run_all(
         verbose: If True, enable verbose output streaming.
         progress: Optional rich.progress.Progress instance.
         master_task: Optional rich.progress.TaskID for the master progress task.
+        progress_view: Optional ProgressView instance for per-job bars in parallel mode.
 
     Returns:
         A dict with keys "success", "skipped", and "failed" counting each job outcome.
@@ -137,13 +139,16 @@ def run_all(
     ExecutorCls = ThreadPoolExecutor if worker_model == "thread" else ProcessPoolExecutor
 
     with ExecutorCls(max_workers=workers) as executor:
-        futures = {
-            executor.submit(run_job, job, backend, str(db.db_path), force, stream_cb): job
-            for job in jobs
-        }
+        futures: dict[Any, ConversionJob] = {}
+        for job in jobs:
+            infile_name = job.infile.name
+            if progress_view is not None and workers > 1:
+                progress_view.add_job_task(infile_name)
+            futures[executor.submit(run_job, job, backend, str(db.db_path), force, stream_cb)] = job
 
         for future in as_completed(futures):
             result = future.result()
+            infile_name = futures[future].infile.name
 
             if result.status == "SUCCESS":
                 summary["success"] += 1
@@ -151,6 +156,9 @@ def run_all(
                 summary["skipped"] += 1
             else:
                 summary["failed"] += 1
+
+            if progress_view is not None and workers > 1:
+                progress_view.remove_job_task(infile_name, result.status)
 
             if progress is not None and master_task is not None:
                 progress.update(

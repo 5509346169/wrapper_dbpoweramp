@@ -258,7 +258,7 @@ def _main() -> None:
         workers = args.workers if args.workers is not None else settings.execution.default_workers
         worker_model = args.worker_model if args.worker_model is not None else settings.execution.worker_model
 
-        view = ProgressView(total=len(jobs), verbose=args.verbose)
+        view = ProgressView(total=len(jobs), verbose=args.verbose, workers=workers)
         with view:
             summary = run_all(
                 jobs=jobs,
@@ -270,6 +270,7 @@ def _main() -> None:
                 verbose=args.verbose,
                 progress=view.progress,
                 master_task=view.master_task,
+                progress_view=view,
             )
 
         # 13. Print final summary
