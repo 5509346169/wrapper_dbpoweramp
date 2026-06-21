@@ -1,7 +1,9 @@
 """execution/runner.py: Execute ConversionJob lists using the configured backend."""
 
+from __future__ import annotations
+
 import shutil
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
+from concurrent.futures import Future, ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -17,7 +19,8 @@ def run_job(
     db_path: str,
     force: bool,
     stream_callback: Optional[Callable[[str], None]],
-) -> JobResult:
+    progress_view: Any | None = None,
+) -> tuple[JobStatus, str, str | None]:
     """
     Execute a single ConversionJob.
 
@@ -27,74 +30,84 @@ def run_job(
         db_path: Path to the history SQLite database.
         force: If True, skip resume checks and force re-processing.
         stream_callback: Optional callback for streaming output line-by-line.
+        progress_view: Optional ProgressView for per-job progress bars in parallel mode.
 
     Returns:
-        JobResult with status SUCCESS, SKIPPED, or FAILED.
+        A tuple of (status, infile_name, error_msg).
     """
+    infile_name = job.infile.name
+
     db = ConversionDB(Path(db_path))
-    if job.job_type == "skip":
-        return JobResult(
-            job=job,
-            status="SKIPPED",
-            error_msg="lossy, leave",
-        )
 
-    if job.job_type == "copy":
-        try:
+    job_task: Any | None = None
+    if progress_view is not None:
+        job_task = progress_view.add_job_task(infile_name)
+
+    try:
+        if job.job_type == "skip":
+            status: JobStatus = "SKIPPED"
+            error_msg: str | None = "lossy, leave"
+
+        elif job.job_type == "copy":
+            try:
+                job.outfile.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(job.infile, job.outfile)
+            except Exception as e:
+                status = "FAILED"
+                error_msg = str(e)
+            else:
+                copy_lyrics(job.infile, job.outfile, job.preset.lyrics)
+                copy_covers(job.infile, job.outfile, job.preset.covers)
+                db.log_conversion(
+                    source=str(job.infile),
+                    dest=str(job.outfile),
+                    job_type=job.job_type,
+                    command=None,
+                    status="SUCCESS",
+                )
+                status = "SUCCESS"
+                error_msg = None
+
+        elif job.job_type == "convert":
+            dest_exists = job.outfile.exists()
+
+            if not force and db.should_skip(
+                str(job.infile), str(job.outfile), job_type="convert", dest_file_exists=dest_exists
+            ):
+                status = "SKIPPED"
+                error_msg = None
+                if job_task is not None and progress_view is not None:
+                    progress_view.remove_job_task(job_task)
+                return status, infile_name, error_msg
+
             job.outfile.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(job.infile, job.outfile)
-        except Exception as e:
-            return JobResult(
-                job=job,
-                status="FAILED",
-                error_msg=str(e),
-            )
+            result = backend.run(job, stream_callback)
 
-        copy_lyrics(job.infile, job.outfile, job.preset.lyrics)
-        copy_covers(job.infile, job.outfile, job.preset.covers)
+            if result.status == "SUCCESS":
+                copy_lyrics(job.infile, job.outfile, job.preset.lyrics)
+                copy_covers(job.infile, job.outfile, job.preset.covers)
+                db.log_conversion(
+                    source=str(job.infile),
+                    dest=str(job.outfile),
+                    job_type=job.job_type,
+                    command=None,
+                    status=result.status,
+                    error_msg=result.error_msg,
+                    stdout=result.stdout,
+                )
 
-        db.log_conversion(
-            source=str(job.infile),
-            dest=str(job.outfile),
-            job_type=job.job_type,
-            command=None,
-            status="SUCCESS",
-        )
+            status = result.status
+            error_msg = result.error_msg
 
-        return JobResult(job=job, status="SUCCESS")
+        else:
+            status = "FAILED"
+            error_msg = f"unknown job_type: {job.job_type}"
 
-    if job.job_type == "convert":
-        dest_exists = job.outfile.exists()
+    finally:
+        if job_task is not None and progress_view is not None:
+            progress_view.remove_job_task(job_task)
 
-        if not force and db.should_skip(
-            str(job.infile), str(job.outfile), job_type="convert", dest_file_exists=dest_exists
-        ):
-            return JobResult(job=job, status="SKIPPED")
-
-        job.outfile.parent.mkdir(parents=True, exist_ok=True)
-        result = backend.run(job, stream_callback)
-
-        if result.status == "SUCCESS":
-            copy_lyrics(job.infile, job.outfile, job.preset.lyrics)
-            copy_covers(job.infile, job.outfile, job.preset.covers)
-
-            db.log_conversion(
-                source=str(job.infile),
-                dest=str(job.outfile),
-                job_type=job.job_type,
-                command=None,
-                status=result.status,
-                error_msg=result.error_msg,
-                stdout=result.stdout,
-            )
-
-        return result
-
-    return JobResult(
-        job=job,
-        status="FAILED",
-        error_msg=f"unknown job_type: {job.job_type}",
-    )
+    return status, infile_name, error_msg
 
 
 def run_all(
@@ -108,7 +121,7 @@ def run_all(
     progress: Any,
     master_task: Any,
     progress_view: Any | None = None,
-) -> dict[str, int]:
+) -> tuple[dict[str, int], list[Future]]:
     """
     Execute a list of ConversionJobs using a thread or process pool.
 
@@ -125,12 +138,14 @@ def run_all(
         progress_view: Optional ProgressView instance for per-job bars in parallel mode.
 
     Returns:
-        A dict with keys "success", "skipped", and "failed" counting each job outcome.
+        A tuple of (summary dict with success/skipped/failed counts, list of futures).
+        Callers in parallel mode iterate the futures externally while a polling loop
+        drives the Live display.
     """
     summary: dict[str, int] = {"success": 0, "skipped": 0, "failed": 0}
 
     if not jobs:
-        return summary
+        return summary, []
 
     stream_cb: Optional[Callable[[str], None]] = None
     if verbose:
@@ -138,33 +153,36 @@ def run_all(
 
     ExecutorCls = ThreadPoolExecutor if worker_model == "thread" else ProcessPoolExecutor
 
+    futures: list[Future] = []
+
     with ExecutorCls(max_workers=workers) as executor:
-        futures: dict[Any, ConversionJob] = {}
-        for job in jobs:
-            infile_name = job.infile.name
-            if progress_view is not None and workers > 1:
-                progress_view.add_job_task(infile_name)
-            futures[executor.submit(run_job, job, backend, str(db.db_path), force, stream_cb)] = job
+        futures = [
+            executor.submit(
+                run_job,
+                job,
+                backend,
+                str(db.db_path),
+                force,
+                stream_cb,
+                progress_view,
+            )
+            for job in jobs
+        ]
+
+        if workers > 1:
+            return summary, futures
 
         for future in as_completed(futures):
-            result = future.result()
-            infile_name = futures[future].infile.name
+            status, infile_name, error_msg = future.result()
 
-            if result.status == "SUCCESS":
+            if status == "SUCCESS":
                 summary["success"] += 1
-            elif result.status == "SKIPPED":
+            elif status == "SKIPPED":
                 summary["skipped"] += 1
             else:
                 summary["failed"] += 1
 
-            if progress_view is not None and workers > 1:
-                progress_view.remove_job_task(infile_name, result.status)
-
             if progress is not None and master_task is not None:
-                progress.update(
-                    master_task,
-                    advance=1,
-                    description=f"{result.job.infile.name}: {result.status}",
-                )
+                progress.update(master_task, advance=1)
 
-    return summary
+    return summary, futures

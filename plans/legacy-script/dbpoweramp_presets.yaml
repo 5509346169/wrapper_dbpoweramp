@@ -1,0 +1,34 @@
+# dBpoweramp CLI Presets
+# Note: dBpoweramp CoreConverter preserves all metadata/tags by default.
+# Ensure no "-nometadata" flags are used to maintain all source tags.
+
+presets:
+  flac-lossless:
+    encoder: "FLAC"
+    ext: ".flac"
+    args: ["-compression-level-5", "-verify"]
+
+  mp3-v0-vbr:
+    encoder: "mp3 (LAME)"
+    ext: ".mp3"
+    args: ["-V 0", "-encoding=\"SLOW\""]
+
+  mp3-320-cbr:
+    encoder: "mp3 (LAME)"
+    ext: ".mp3"
+    args: ["-b 320"]
+
+  aac-vbr-high:
+    encoder: "m4a FDK (AAC)"
+    ext: ".m4a"
+    args: ["-m 5"]
+
+ qaac-cvbr-256:
+    encoder: "m4a QAAC (iTunes)"
+    ext: ".m4a"
+    args: ["-convert_to=\"m4a QAAC (iTunes)\"", "-cbr_vbr=\"cVBR\"", "-bitrate=\"256\"", "-codec=\"LC AAC\"", "-keepsr"]
+
+  opus-128:
+    encoder: "Opus"
+    ext: ".opus"
+    args: ["-bitrate 128"]

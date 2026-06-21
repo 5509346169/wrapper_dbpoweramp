@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import sys
+import threading
+import time
 from collections import deque
 from typing import TYPE_CHECKING
 
@@ -12,19 +14,16 @@ from rich.live import Live
 from rich.panel import Panel
 from rich.progress import (
     BarColumn,
+    MofNCompleteColumn,
     Progress,
     TaskID,
     TaskProgressColumn,
     TextColumn,
-    TimeRemainingColumn,
+    TimeElapsedColumn,
 )
 
 if TYPE_CHECKING:
     from rich.progress import TaskID
-
-
-# Maximum number of per-job progress bars to show at once.
-_MAX_VISIBLE_JOBS = 8
 
 
 class ProgressView:
@@ -37,13 +36,15 @@ class ProgressView:
     (rich.progress.TaskID) so the Execution Runner can update progress after
     each job.
 
-    When workers > 1, per-job progress bars are rendered dynamically in the
-    main progress panel. Each bar represents one active or recently completed
-    job, allowing the user to see parallel progress across workers.
+    When workers > 1, each worker creates and manages its own per-job bar:
+    bar is added when the worker starts, set to completed=1 on finish, and
+    removed immediately. A background polling loop keeps the Live display
+    refreshed while jobs are running. This mirrors the original script's
+    pattern exactly.
 
     Example
     -------
-    >>> with ProgressView(total=5, workers=4, verbose=True) as view:
+    >>> with ProgressView(total=5, verbose=True) as view:
     ...     view.update_log(["Starting conversion..."])
     ...     view.progress.update(view.master_task, advance=1)
     """
@@ -62,8 +63,8 @@ class ProgressView:
             verbose: If True, render a two-panel layout with a log stream
                 panel below the progress bar. If False, render only the
                 progress bar.
-            workers: Number of parallel workers. When > 1, per-job progress
-                bars are displayed alongside the master bar.
+            workers: Number of parallel workers. When > 1, the Live display
+                is polled at ~50ms intervals to keep per-job bars fresh.
         """
         self._total = total
         self._verbose = verbose
@@ -72,77 +73,92 @@ class ProgressView:
         self._started = False
         self._console = Console(file=sys.stdout)
 
-        # Progress bar instance — exposed for the Execution Runner to update.
         self.progress: Progress = Progress(
-            TextColumn("[bold blue]{task.description}[/bold blue]"),
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
             BarColumn(),
-            TaskProgressColumn(),
-            TimeRemainingColumn(),
+            MofNCompleteColumn(),
+            TimeElapsedColumn(),
             console=self._console,
+            transient=False,
+            auto_refresh=False,
         )
 
-        # Master task ID — exposed so the runner can call progress.update(master_task, advance=1).
-        self.master_task: TaskID = self.progress.add_task("[green]Processing...", total=total)
+        self.master_task: TaskID = self.progress.add_task(
+            "[bold green]Total Progress",
+            total=total,
+        )
 
-        # Deque of recent log lines for the verbose panel.
-        self._log_lines: deque[str] = deque(maxlen=10)
-
-        # Per-job tasks: maps job infile name -> TaskID
-        self._job_tasks: dict[str, TaskID] = {}
-
-        # Queue of job names to show in the per-job bars (most recent first)
-        self._visible_job_names: list[str] = []
-
-
-    def _rebuild_progress_panel(self) -> None:
-        """Rebuild the progress panel with per-job bars, updating the Live display."""
-        self.progress.refresh()
+        self._log_lines: deque[str] = deque(maxlen=15)
+        self._poll_thread: threading.Thread | None = None
+        self._poll_stop = threading.Event()
 
     def add_job_task(self, infile_name: str) -> TaskID:
         """
-        Add a per-job progress bar and return its TaskID.
+        Add a per-job bar inside a worker thread.
+
+        Mirrors the original script: worker calls this at start, then
+        calls remove_job_task() on completion.
 
         Args:
-            infile_name: Short name of the input file (used as the task key).
+            infile_name: Short name of the input file.
 
         Returns:
             The TaskID for the newly added job bar.
         """
-        # Limit concurrent bars to avoid terminal clutter.
-        max_visible = min(self._workers, _MAX_VISIBLE_JOBS)
-
-        # Evict the oldest entry if we're at capacity.
-        if len(self._visible_job_names) >= max_visible:
-            oldest = self._visible_job_names.pop(0)
-            if oldest in self._job_tasks:
-                self.progress.remove_task(self._job_tasks.pop(oldest))
-
-        self._visible_job_names.append(infile_name)
-        task = self.progress.add_task(
-            infile_name,
-            total=None,  # indeterminate spinner + bar
-            start=True,
+        return self.progress.add_task(
+            f"[cyan]{infile_name[:25]}[/]",
+            total=1,
         )
-        self._job_tasks[infile_name] = task
-        return task
 
-    def remove_job_task(self, infile_name: str, status: str) -> None:
+    def remove_job_task(self, task_id: TaskID) -> None:
         """
-        Mark a per-job progress bar as complete and remove it from the display.
+        Mark a per-job bar done and remove it from the display.
+
+        Called by the worker on job completion.
 
         Args:
-            infile_name: Short name of the input file (task key).
-            status: One of SUCCESS, SKIPPED, FAILED — used in the bar label.
+            task_id: The TaskID returned by add_job_task().
         """
-        if infile_name not in self._job_tasks:
-            return
+        self.progress.update(task_id, completed=1, visible=False)
+        self.progress.remove_task(task_id)
 
-        task_id = self._job_tasks[infile_name]
-        self.progress.update(task_id, completed=True, description=f"[dim]{infile_name}: {status}[/dim]")
-        del self._job_tasks[infile_name]
-        if infile_name in self._visible_job_names:
-            self._visible_job_names.remove(infile_name)
-        self._rebuild_progress_panel()
+    def update_log(self, lines: list[str]) -> None:
+        """
+        Append lines to the verbose log stream.
+
+        Workers call this to push per-job output into the log panel.
+
+        Args:
+            lines: New log lines to append. The internal deque keeps only the
+                most recent N lines (N=15).
+        """
+        self._log_lines.extend(lines)
+
+    def _poll_loop(self, layout: Layout) -> None:
+        """Background thread: refresh the Live display every ~50ms while jobs run."""
+        while not self._poll_stop.wait(0.05):
+            if self._live is not None:
+                self._live.refresh()
+            time.sleep(0.05)
+
+    def update_layout(self) -> None:
+        """
+        Refresh the Live display layout (used by the polling loop in main.py).
+
+        Rebuilds the progress panel and verbose log panel from current state.
+        """
+        if self._live is not None:
+            from rich.text import Text
+
+            log_text = Text.from_markup("\n".join(self._log_lines)) if self._log_lines else Text("[dim]Waiting for output...[/dim]")
+            self._live.layout["main"].update(
+                Panel(self.progress, title="Progress", border_style="green")
+            )
+            self._live.layout["footer"].update(
+                Panel(log_text, title="CoreConverter Live Verbose Stream", border_style="blue")
+            )
+            self._live.refresh()
 
     def start(self) -> "ProgressView":
         """
@@ -157,86 +173,74 @@ class ProgressView:
         if self._started:
             raise RuntimeError("ProgressView.start() called twice")
 
-        if self._verbose:
-            layout = self._build_layout()
-        else:
-            layout = self.progress
-
-        self._live = Live(
-            layout,
-            console=self._console,
-            refresh_per_second=10,
-            transient=False,
-        )
-        self._live.__enter__()
+        self.progress.start()
         self._started = True
+
+        if self._workers > 1:
+            layout = self._build_layout()
+            self._live = Live(
+                layout,
+                console=self._console,
+                refresh_per_second=20,
+                transient=False,
+                screen=False,
+            )
+            self._live.__enter__()
+            self._poll_stop.clear()
+            self._poll_thread = threading.Thread(target=self._poll_loop, daemon=True)
+            self._poll_thread.start()
+        elif self._verbose:
+            layout = self._build_layout()
+            self._live = Live(
+                layout,
+                console=self._console,
+                refresh_per_second=10,
+                transient=False,
+            )
+            self._live.__enter__()
+        else:
+            self._live = None
+
         return self
 
     def _build_layout(self) -> Layout:
         """Build the two-panel layout (progress bar + verbose log panel)."""
+        from rich.text import Text
+
         layout = Layout()
-
-        progress_panel = Panel(
-            self.progress,
-            title="Progress",
-            border_style="green",
-            padding=(0, 1),
+        layout.split(
+            Layout(name="main", ratio=2),
+            Layout(name="footer", ratio=1),
         )
 
-        verbose_panel = Panel(
-            "\n".join(self._log_lines) if self._log_lines else "[dim]Waiting for output...[/dim]",
-            title="Verbose Log",
-            border_style="cyan",
-            padding=(0, 1),
-        )
-
-        layout.split_column(progress_panel, verbose_panel)
-        return layout
-
-    def update_log(self, lines: list[str]) -> None:
-        """
-        Update the verbose log panel with the most recent lines.
-
-        This method is a no-op when verbose=False.
-
-        Args:
-            lines: New log lines to append. The internal deque keeps only the
-                most recent N lines (N=10).
-        """
         if not self._verbose:
-            return
+            layout["footer"].visible = False
 
-        self._log_lines.extend(lines)
-
-        if self._started and self._live is not None:
-            verbose_panel = Panel(
-                "\n".join(self._log_lines) if self._log_lines else "[dim]Waiting for output...[/dim]",
-                title="Verbose Log",
-                border_style="cyan",
-                padding=(0, 1),
-            )
-            progress_panel = Panel(
-                self.progress,
-                title="Progress",
-                border_style="green",
-                padding=(0, 1),
-            )
-            layout = Layout()
-            layout.split_column(progress_panel, verbose_panel)
-            self._live.update(layout)
-            self._rebuild_progress_panel()
+        log_text = Text.from_markup("\n".join(self._log_lines)) if self._log_lines else Text("[dim]Waiting for output...[/dim]")
+        layout["main"].update(
+            Panel(self.progress, title="Progress", border_style="green")
+        )
+        layout["footer"].update(
+            Panel(log_text, title="CoreConverter Live Verbose Stream", border_style="blue")
+        )
+        return layout
 
     def stop(self) -> None:
         """
-        Stop the rich.live.Live rendering context.
+        Stop the rich.live.Live rendering context and poll thread.
 
-        This method is safe to call multiple times (idempotent after the
-        first call).
+        Safe to call multiple times.
         """
-        if self._started and self._live is not None:
+        if self._poll_stop is not None:
+            self._poll_stop.set()
+        if self._poll_thread is not None:
+            self._poll_thread.join(timeout=1.0)
+            self._poll_thread = None
+        if self._live is not None:
             self._live.__exit__(None, None, None)
             self._live = None
-            self._started = False
+        self.progress.stop()
+        self._started = False
 
     def __enter__(self) -> "ProgressView":
         """Enter the context manager, starting the Live rendering."""
