@@ -5,7 +5,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from exceptions import BackendError, PathConfigError
+from src.exceptions import BackendError, PathConfigError
 
 
 def compute_output_path(

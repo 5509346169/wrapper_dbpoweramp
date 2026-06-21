@@ -6,7 +6,7 @@ from typing import Any
 
 import yaml
 
-from exceptions import ConfigError
+from src.exceptions import ConfigError
 
 
 # ---------------------------------------------------------------------------

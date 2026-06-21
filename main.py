@@ -6,21 +6,21 @@ import signal
 import sys
 from pathlib import Path
 
-from backends.registry import detect_backend_for_run, get_backend
-from cli.args import parse_args, validate_args
-from config.preset_loader import get_preset, load_presets
-from config.settings_loader import load_settings
-from exceptions import BackendError, PresetNotFoundError
-from execution.runner import run_all
-from history.db import ConversionDB
-from index.builder import IndexBuilder
-from index.cleanup import cleanup_index
-from index.scanner import AUDIO_EXTENSIONS as _AUDIO_EXTS, IndexRow, scan_with_progress
-from jobs.builder import build_jobs, discover_audio_files, enrich_index_rows
-from models.types import Backend, ConversionJob, LossyAction
-from pathing.resolver import validate_source_path
+from src.backends.registry import detect_backend_for_run, get_backend
+from src.cli.args import parse_args, validate_args
+from src.config.preset_loader import get_preset, load_presets
+from src.config.settings_loader import load_settings
+from src.exceptions import BackendError, PresetNotFoundError
+from src.execution.runner import run_all
+from src.history.db import ConversionDB
+from src.index.builder import IndexBuilder
+from src.index.cleanup import cleanup_index
+from src.index.scanner import AUDIO_EXTENSIONS as _AUDIO_EXTS, IndexRow, scan_with_progress
+from src.jobs.builder import build_jobs, discover_audio_files, enrich_index_rows
+from src.models.types import Backend, ConversionJob, LossyAction
+from src.pathing.resolver import validate_source_path
 from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn
-from ui.progress_view import ProgressView
+from src.ui.progress_view import ProgressView
 
 # Module-level state used by the SIGINT/SIGTERM handlers below.
 _run_interrupted: bool = False

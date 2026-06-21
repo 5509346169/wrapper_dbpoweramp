@@ -3,9 +3,9 @@
 import shutil
 from pathlib import Path
 
-from models.types import CoverPolicy, SidecarPolicy
+from src.models.types import CoverPolicy, SidecarPolicy
 
-from pathing.resolver import hide_filename
+from src.pathing.resolver import hide_filename
 
 
 def copy_lyrics(

@@ -3,7 +3,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from exceptions import ProbeError
+from src.exceptions import ProbeError
 
 
 LOSSLESS_CODECS = {

@@ -9,7 +9,7 @@ explicitly: ``from builtins import IndexError as _BuiltinIndexError``.
 
 from pathlib import Path
 
-from exceptions import IndexError
+from src.exceptions import IndexError
 
 
 def cleanup_index(

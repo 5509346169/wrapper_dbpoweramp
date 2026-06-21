@@ -1,11 +1,11 @@
 """backends/registry.py: Factory for ConversionBackend instances with fail-fast environment validation."""
 
-from backends.native_dbpoweramp import NativeDbpowerampBackend
-from backends.native_ffmpeg import NativeFfmpegBackend
-from backends.wine_dbpoweramp import WineDbpowerampBackend
-from config.settings_loader import Settings
-from exceptions import BackendError, ConfigError
-from models.types import Backend
+from src.backends.native_dbpoweramp import NativeDbpowerampBackend
+from src.backends.native_ffmpeg import NativeFfmpegBackend
+from src.backends.wine_dbpoweramp import WineDbpowerampBackend
+from src.config.settings_loader import Settings
+from src.exceptions import BackendError, ConfigError
+from src.models.types import Backend
 
 
 class UnknownBackendError(ConfigError):
@@ -89,7 +89,7 @@ def get_backend(name: Backend, settings: Settings) -> "ConversionBackend":
         BackendError:       If the backend's environment is invalid (e.g. prefix
                             missing for wine, binary not found for native).
     """
-    from backends.base import ConversionBackend
+    from src.backends.base import ConversionBackend
 
     backend: ConversionBackend
 

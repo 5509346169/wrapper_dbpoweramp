@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Iterator, Optional
 
 try:
-    from index.scanner import IndexRow
+    from src.index.scanner import IndexRow
 except ImportError:
     from dataclasses import dataclass
 

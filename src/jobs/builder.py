@@ -3,10 +3,10 @@
 from pathlib import Path
 from typing import Optional
 
-from audio.inspector import probe_many
-from index.scanner import IndexRow
-from models.types import ConversionJob, LossyAction, PresetConfig
-from pathing.resolver import compute_output_path
+from src.audio.inspector import probe_many
+from src.index.scanner import IndexRow
+from src.models.types import ConversionJob, LossyAction, PresetConfig
+from src.pathing.resolver import compute_output_path
 
 
 AUDIO_EXTENSIONS: set[str] = {".flac", ".mp3", ".m4a", ".opus", ".ogg", ".wav", ".ape", ".wv", ".tta"}

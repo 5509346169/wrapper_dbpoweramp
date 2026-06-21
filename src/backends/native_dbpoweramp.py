@@ -5,10 +5,10 @@ import subprocess
 from pathlib import Path
 from typing import Callable, Optional
 
-from backends.base import ConversionBackend
-from config.settings_loader import Settings
-from exceptions import BackendError
-from models.types import (
+from src.backends.base import ConversionBackend
+from src.config.settings_loader import Settings
+from src.exceptions import BackendError
+from src.models.types import (
     Backend,
     ConversionJob,
     JobResult,

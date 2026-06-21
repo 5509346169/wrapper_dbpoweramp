@@ -3,7 +3,7 @@
 from abc import ABC, abstractmethod
 from typing import Callable, Optional
 
-from models.types import Backend, ConversionJob, JobResult, PresetConfig
+from src.models.types import Backend, ConversionJob, JobResult, PresetConfig
 
 
 class ConversionBackend(ABC):

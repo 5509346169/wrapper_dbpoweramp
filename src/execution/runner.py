@@ -7,10 +7,10 @@ from concurrent.futures import Future, ProcessPoolExecutor, ThreadPoolExecutor, 
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from backends.base import ConversionBackend
-from history.db import ConversionDB
-from models.types import ConversionJob, JobResult, JobStatus
-from sidecars.manager import copy_covers, copy_lyrics
+from src.backends.base import ConversionBackend
+from src.history.db import ConversionDB
+from src.models.types import ConversionJob, JobResult, JobStatus
+from src.sidecars.manager import copy_covers, copy_lyrics
 
 
 def run_job(
