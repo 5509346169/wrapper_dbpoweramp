@@ -137,7 +137,7 @@ class ProgressView:
         """
         self._log_lines.extend(lines)
 
-    def _poll_loop(self, layout: Layout) -> None:
+    def _poll_loop(self) -> None:
         """Background thread: refresh the Live display every ~50ms while jobs run."""
         while not self._poll_stop.wait(0.05):
             if self._live is not None:

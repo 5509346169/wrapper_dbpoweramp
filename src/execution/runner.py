@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import shutil
 from concurrent.futures import Future, ProcessPoolExecutor, ThreadPoolExecutor, as_completed
+from enum import Enum
 from pathlib import Path
+from queue import Queue
 from typing import Any, Callable, Optional
 
 from src.backends.base import ConversionBackend
@@ -13,13 +15,45 @@ from src.models.types import ConversionJob, JobResult, JobStatus
 from src.sidecars.manager import copy_covers, copy_lyrics
 
 
+class JobEventKind(str, Enum):
+    """Picklable events workers push onto the shared event queue."""
+
+    STARTED = "started"
+    FINISHED = "finished"
+    LOG = "log"
+
+
+def _make_event_queue(worker_model: str) -> Queue:
+    """Build a thread/process-safe queue for cross-worker UI events."""
+    if worker_model == "process":
+        from multiprocessing import get_context
+
+        # multiprocessing.Queue cannot be pickled into a spawn-based worker
+        # (Windows default), so use a Manager to obtain a picklable proxy.
+        manager = get_context().Manager()
+        return manager.Queue()
+    return Queue()
+
+
+def _build_stream_callback(events: Queue) -> Optional[Callable[[str], None]]:
+    """Build a stream_callback that forwards verbose lines to the main thread."""
+    from functools import partial
+
+    return partial(_push_log_event, events)
+
+
+def _push_log_event(events: Queue, line: str) -> None:
+    """Module-level picklable sink used by workers to enqueue verbose lines."""
+    events.put((JobEventKind.LOG, line))
+
+
 def run_job(
     job: ConversionJob,
     backend: ConversionBackend,
     db_path: str,
     force: bool,
     stream_callback: Optional[Callable[[str], None]],
-    progress_view: Any | None = None,
+    events: Optional[Queue] = None,
 ) -> tuple[JobStatus, str, str | None]:
     """
     Execute a single ConversionJob.
@@ -30,7 +64,10 @@ def run_job(
         db_path: Path to the history SQLite database.
         force: If True, skip resume checks and force re-processing.
         stream_callback: Optional callback for streaming output line-by-line.
-        progress_view: Optional ProgressView for per-job progress bars in parallel mode.
+        events: Optional cross-process/thread queue for UI events. Workers push
+            (JobEventKind.STARTED, infile_name) when they begin and
+            (JobEventKind.FINISHED, infile_name) when they finish. The main
+            thread drains the queue and updates the UI.
 
     Returns:
         A tuple of (status, infile_name, error_msg).
@@ -39,9 +76,8 @@ def run_job(
 
     db = ConversionDB(Path(db_path))
 
-    job_task: Any | None = None
-    if progress_view is not None:
-        job_task = progress_view.add_job_task(infile_name)
+    if events is not None:
+        events.put((JobEventKind.STARTED, infile_name))
 
     try:
         if job.job_type == "skip":
@@ -76,8 +112,6 @@ def run_job(
             ):
                 status = "SKIPPED"
                 error_msg = None
-                if job_task is not None and progress_view is not None:
-                    progress_view.remove_job_task(job_task)
                 return status, infile_name, error_msg
 
             job.outfile.parent.mkdir(parents=True, exist_ok=True)
@@ -104,8 +138,8 @@ def run_job(
             error_msg = f"unknown job_type: {job.job_type}"
 
     finally:
-        if job_task is not None and progress_view is not None:
-            progress_view.remove_job_task(job_task)
+        if events is not None:
+            events.put((JobEventKind.FINISHED, infile_name))
 
     return status, infile_name, error_msg
 
@@ -120,8 +154,7 @@ def run_all(
     verbose: bool,
     progress: Any,
     master_task: Any,
-    progress_view: Any | None = None,
-) -> tuple[dict[str, int], list[Future]]:
+) -> tuple[dict[str, int], list[Future], Queue]:
     """
     Execute a list of ConversionJobs using a thread or process pool.
 
@@ -135,21 +168,22 @@ def run_all(
         verbose: If True, enable verbose output streaming.
         progress: Optional rich.progress.Progress instance.
         master_task: Optional rich.progress.TaskID for the master progress task.
-        progress_view: Optional ProgressView instance for per-job bars in parallel mode.
 
     Returns:
-        A tuple of (summary dict with success/skipped/failed counts, list of futures).
-        Callers in parallel mode iterate the futures externally while a polling loop
-        drives the Live display.
+        A tuple of (summary dict with success/skipped/failed counts, list of futures,
+        events queue). The events queue carries (JobEventKind, payload) tuples from
+        workers; callers in parallel mode drain it between iterations to update
+        per-job UI state without ever touching rich from inside a worker.
     """
     summary: dict[str, int] = {"success": 0, "skipped": 0, "failed": 0}
 
     if not jobs:
-        return summary, []
+        return summary, [], _make_event_queue(worker_model)
 
-    stream_cb: Optional[Callable[[str], None]] = None
-    if verbose:
-        stream_cb = lambda line: print(line)  # noqa: E731
+    events = _make_event_queue(worker_model)
+    stream_cb: Optional[Callable[[str], None]] = (
+        _build_stream_callback(events) if verbose else None
+    )
 
     ExecutorCls = ThreadPoolExecutor if worker_model == "thread" else ProcessPoolExecutor
 
@@ -164,15 +198,16 @@ def run_all(
                 str(db.db_path),
                 force,
                 stream_cb,
-                progress_view,
+                events,
             )
             for job in jobs
         ]
 
         if workers > 1:
-            return summary, futures
+            return summary, futures, events
 
         for future in as_completed(futures):
+            _drain_events_into_ui(events, progress_view=None)
             status, infile_name, error_msg = future.result()
 
             if status == "SUCCESS":
@@ -185,4 +220,22 @@ def run_all(
             if progress is not None and master_task is not None:
                 progress.update(master_task, advance=1)
 
-    return summary, futures
+    return summary, futures, events
+
+
+def _drain_events_into_ui(events: Queue, progress_view: Any | None) -> None:
+    """
+    Drain queued (JobEventKind, payload) tuples from workers and apply UI updates
+    on the calling thread. Per-job bars are intentionally omitted in this
+    minimal fix; only the verbose log stream is updated. Future per-job UI
+    state will be wired up here once the JobBarRegistry is added.
+    """
+    while True:
+        try:
+            kind, payload = events.get_nowait()
+        except Exception:
+            return
+        if progress_view is None:
+            continue
+        if kind == JobEventKind.LOG:
+            progress_view.update_log([str(payload)])

@@ -260,7 +260,7 @@ def _main() -> None:
 
         view = ProgressView(total=len(jobs), verbose=args.verbose, workers=workers)
         with view:
-            summary, futures = run_all(
+            summary, futures, events = run_all(
                 jobs=jobs,
                 backend=backend,
                 db=db,
@@ -270,7 +270,6 @@ def _main() -> None:
                 verbose=args.verbose,
                 progress=view.progress,
                 master_task=view.master_task,
-                progress_view=view,
             )
 
             # Parallel mode: poll the Live display while jobs run.
@@ -278,15 +277,16 @@ def _main() -> None:
             if workers > 1:
                 import time as _time
                 from concurrent.futures import as_completed as _as_completed
+                from src.execution.runner import _drain_events_into_ui
 
                 view.update_layout()
-                active_futures = {f: f for f in futures}
                 remaining = list(futures)
                 while remaining:
                     view.update_layout()
+                    _drain_events_into_ui(events, view)
                     _time.sleep(0.05)
-                    done, remaining = _as_completed(remaining)
-                    for future in done:
+                    for future in list(_as_completed(remaining)):
+                        remaining.remove(future)
                         status, infile_name, error_msg = future.result()
                         if status == "SUCCESS":
                             summary["success"] += 1
