@@ -154,6 +154,7 @@ def run_all(
     verbose: bool,
     progress: Any,
     master_task: Any,
+    progress_view: Any | None = None,
 ) -> tuple[dict[str, int], list[Future], Queue]:
     """
     Execute a list of ConversionJobs using a thread or process pool.
@@ -168,6 +169,8 @@ def run_all(
         verbose: If True, enable verbose output streaming.
         progress: Optional rich.progress.Progress instance.
         master_task: Optional rich.progress.TaskID for the master progress task.
+        progress_view: Optional ProgressView instance. When provided, per-job bars
+            are added and removed as STARTED/FINISHED events are drained.
 
     Returns:
         A tuple of (summary dict with success/skipped/failed counts, list of futures,
@@ -207,7 +210,7 @@ def run_all(
             return summary, futures, events
 
         for future in as_completed(futures):
-            _drain_events_into_ui(events, progress_view=None)
+            _drain_events_into_ui(events, progress_view)
             status, infile_name, error_msg = future.result()
 
             if status == "SUCCESS":
@@ -226,9 +229,7 @@ def run_all(
 def _drain_events_into_ui(events: Queue, progress_view: Any | None) -> None:
     """
     Drain queued (JobEventKind, payload) tuples from workers and apply UI updates
-    on the calling thread. Per-job bars are intentionally omitted in this
-    minimal fix; only the verbose log stream is updated. Future per-job UI
-    state will be wired up here once the JobBarRegistry is added.
+    on the calling thread. Per-job bars are added on STARTED and removed on FINISHED.
     """
     while True:
         try:
@@ -239,3 +240,10 @@ def _drain_events_into_ui(events: Queue, progress_view: Any | None) -> None:
             continue
         if kind == JobEventKind.LOG:
             progress_view.update_log([str(payload)])
+        elif kind == JobEventKind.STARTED:
+            progress_view.add_job_task(str(payload))
+        elif kind == JobEventKind.FINISHED:
+            infile_name = str(payload)
+            if infile_name in progress_view._job_tasks:
+                task_id = progress_view._job_tasks[infile_name]
+                progress_view.remove_job_task(task_id)

@@ -270,6 +270,7 @@ def _main() -> None:
                 verbose=args.verbose,
                 progress=view.progress,
                 master_task=view.master_task,
+                progress_view=view,
             )
 
             # Parallel mode: poll the Live display while jobs run.

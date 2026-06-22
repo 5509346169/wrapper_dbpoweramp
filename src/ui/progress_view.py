@@ -14,13 +14,10 @@ from rich.live import Live
 from rich.panel import Panel
 from rich.progress import (
     BarColumn,
-    MofNCompleteColumn,
     Progress,
-    SpinnerColumn,
     TaskID,
     TaskProgressColumn,
     TextColumn,
-    TimeElapsedColumn,
 )
 
 if TYPE_CHECKING:
@@ -75,20 +72,20 @@ class ProgressView:
         self._console = Console(file=sys.stdout)
 
         self.progress: Progress = Progress(
-            SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            MofNCompleteColumn(),
-            TimeElapsedColumn(),
+            BarColumn(bar_width=20),
+            TaskProgressColumn(),
             console=self._console,
             transient=False,
             auto_refresh=False,
         )
 
         self.master_task: TaskID = self.progress.add_task(
-            "[bold green]Total Progress",
+            "[bold]Converting",
             total=total,
         )
+
+        self._job_tasks: dict[str, TaskID] = {}
 
         self._log_lines: deque[str] = deque(maxlen=15)
         self._poll_thread: threading.Thread | None = None
@@ -97,7 +94,7 @@ class ProgressView:
 
     def add_job_task(self, infile_name: str) -> TaskID:
         """
-        Add a per-job bar inside a worker thread.
+        Add an indeterminate per-job bar when a worker starts.
 
         Mirrors the original script: worker calls this at start, then
         calls remove_job_task() on completion.
@@ -108,10 +105,12 @@ class ProgressView:
         Returns:
             The TaskID for the newly added job bar.
         """
-        return self.progress.add_task(
+        task_id = self.progress.add_task(
             f"[cyan]{infile_name[:25]}[/]",
-            total=1,
+            total=None,
         )
+        self._job_tasks[infile_name] = task_id
+        return task_id
 
     def remove_job_task(self, task_id: TaskID) -> None:
         """
@@ -122,8 +121,9 @@ class ProgressView:
         Args:
             task_id: The TaskID returned by add_job_task().
         """
-        self.progress.update(task_id, completed=1, visible=False)
+        self.progress.update(task_id, completed=1)
         self.progress.remove_task(task_id)
+        self._job_tasks = {k: v for k, v in self._job_tasks.items() if v != task_id}
 
     def update_log(self, lines: list[str]) -> None:
         """
