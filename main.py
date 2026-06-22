@@ -15,12 +15,16 @@ from src.execution.runner import run_all
 from src.history.db import ConversionDB
 from src.index.builder import IndexBuilder
 from src.index.cleanup import cleanup_index
-from src.index.scanner import AUDIO_EXTENSIONS as _AUDIO_EXTS, IndexRow, scan_with_progress
+from src.index.scanner import (
+    AUDIO_EXTENSIONS as _AUDIO_EXTS,
+    IndexRow,
+    _discover_audio_files,
+    scan_with_progress,
+)
 from src.jobs.builder import build_jobs, discover_audio_files, enrich_index_rows
 from src.models.types import Backend, ConversionJob, LossyAction
 from src.pathing.resolver import validate_source_path
-from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn
-from src.ui.progress_view import ProgressView
+from src.ui.progress_view import RichProgressSink
 
 # Module-level state used by the SIGINT/SIGTERM handlers below.
 _run_interrupted: bool = False
@@ -107,33 +111,21 @@ def _main() -> None:
 
     try:
         # 7. Scan phase with a progress bar.
-        # We need the total count before opening the progress bar (rich requires
-        # total up front), so we do a single lightweight rglob just for the count,
-        # then the real scan_with_progress walk does the actual stat() work.
-        print("[cyan]Scanning...[/cyan]", end="", flush=True)
-        if args.input.is_file():
-            total_files = 1
-        else:
-            total_files = sum(
-                1
-                for p in args.input.rglob("*")
-                if p.is_file() and p.suffix.lower() in _AUDIO_EXTS
-                and p.parent.name not in set(args.exclude)
-            )
+        # Use _discover_audio_files once to get both the count and the iterator;
+        # scan_with_progress walks the same list and calls progress.advance()
+        # per file, eliminating the double rglob.
+        audio_files = _discover_audio_files(args.input, args.exclude)
+        total_files = len(audio_files)
 
-        with Progress(
-            TextColumn("[bold cyan]{task.description}[/bold cyan]"),
-            BarColumn(),
-            TaskProgressColumn(),
-        ) as scan_progress:
-            scan_task = scan_progress.add_task("[cyan]Scanning[/cyan]", total=total_files)
-            rows, sidecar_map = scan_with_progress(
-                input_path=args.input,
-                excludes=args.exclude,
-                preset=preset,
-                progress=scan_progress,
-                scan_task=scan_task,
-            )
+        sink = RichProgressSink()
+        sink.start_phase("Scanning", total=total_files)
+        rows, sidecar_map = scan_with_progress(
+            input_path=args.input,
+            excludes=args.exclude,
+            preset=preset,
+            progress=sink,
+        )
+        sink.stop()
 
         print(f" [green]{len(rows)} file(s) found[/green]")
 
@@ -258,45 +250,40 @@ def _main() -> None:
         workers = args.workers if args.workers is not None else settings.execution.default_workers
         worker_model = args.worker_model if args.worker_model is not None else settings.execution.worker_model
 
-        view = ProgressView(total=len(jobs), verbose=args.verbose, workers=workers)
-        with view:
-            summary, futures, events = run_all(
-                jobs=jobs,
-                backend=backend,
-                db=db,
-                force=args.force,
-                workers=workers,
-                worker_model=worker_model,
-                verbose=args.verbose,
-                progress=view.progress,
-                master_task=view.master_task,
-                progress_view=view,
-            )
+        total_bytes = sum(row.file_size for row in rows)
+        sink = RichProgressSink(total_bytes=total_bytes)
+        sink.start_phase("Converting", total=len(jobs))
+        summary, futures, events = run_all(
+            jobs=jobs,
+            backend=backend,
+            db=db,
+            force=args.force,
+            workers=workers,
+            worker_model=worker_model,
+            verbose=args.verbose,
+            progress=sink,
+        )
 
-            # Parallel mode: poll the Live display while jobs run.
-            # Collect results as they complete so the summary is correct.
-            if workers > 1:
-                import time as _time
-                from concurrent.futures import as_completed as _as_completed
-                from src.execution.runner import _drain_events_into_ui
+        # In parallel mode, drain the event queue until all futures complete.
+        if workers > 1:
+            from concurrent.futures import as_completed as _as_completed
+            from src.execution.runner import _drain_events_into_ui
 
-                view.update_layout()
-                remaining = list(futures)
-                while remaining:
-                    view.update_layout()
-                    _drain_events_into_ui(events, view)
-                    _time.sleep(0.05)
-                    for future in list(_as_completed(remaining)):
-                        remaining.remove(future)
-                        status, infile_name, error_msg = future.result()
-                        if status == "SUCCESS":
-                            summary["success"] += 1
-                        elif status == "SKIPPED":
-                            summary["skipped"] += 1
-                        else:
-                            summary["failed"] += 1
-                        if progress is not None and master_task is not None:
-                            progress.update(master_task, advance=1)
+            remaining = list(futures)
+            while remaining:
+                _drain_events_into_ui(events, sink)
+                for future in list(_as_completed(remaining)):
+                    remaining.remove(future)
+                    status, infile_name, error_msg = future.result()
+                    if status == "SUCCESS":
+                        summary["success"] += 1
+                    elif status == "SKIPPED":
+                        summary["skipped"] += 1
+                    else:
+                        summary["failed"] += 1
+                    sink.advance()
+
+        sink.stop()
 
         # 13. Print final summary
         print()

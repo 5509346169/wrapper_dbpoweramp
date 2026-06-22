@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+
 from typing import Optional
 
-from rich.progress import Progress, TaskID
+from src.ui.progress_view import ProgressSink
 
 
 AUDIO_EXTENSIONS: set[str] = {".flac", ".mp3", ".m4a", ".opus", ".ogg", ".wav", ".ape", ".wv", ".tta"}
@@ -73,8 +74,7 @@ def scan_with_progress(
     input_path: Path,
     excludes: list[str],
     preset,
-    progress: Optional[Progress] = None,
-    scan_task: Optional[TaskID] = None,
+    progress: ProgressSink,
 ) -> tuple[list[IndexRow], dict[Path, str]]:
     """Walk ``input_path`` once, collecting file stats and sidecar candidates.
 
@@ -86,8 +86,7 @@ def scan_with_progress(
         input_path: File or directory to scan.
         excludes: Directory basenames to skip during the walk.
         preset: ``PresetConfig`` — used to determine which sidecar patterns to look for.
-        progress: Optional ``rich.progress.Progress`` instance for live reporting.
-        scan_task: Optional ``TaskID`` to advance as each file is processed.
+        progress: ``ProgressSink`` for live reporting.
 
     Returns:
         ``(rows, sidecar_map)`` where ``rows`` is a list of ``IndexRow`` and
@@ -114,7 +113,6 @@ def scan_with_progress(
                 mtime=stat.st_mtime,
             )
         )
-        if progress is not None and scan_task is not None:
-            progress.update(scan_task, advance=1)
+        progress.advance()
 
     return rows, sidecar_map

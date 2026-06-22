@@ -7,12 +7,13 @@ from concurrent.futures import Future, ProcessPoolExecutor, ThreadPoolExecutor, 
 from enum import Enum
 from pathlib import Path
 from queue import Queue
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 
 from src.backends.base import ConversionBackend
 from src.history.db import ConversionDB
 from src.models.types import ConversionJob, JobResult, JobStatus
 from src.sidecars.manager import copy_covers, copy_lyrics
+from src.ui.progress_view import ProgressSink, SubtaskID
 
 
 class JobEventKind(str, Enum):
@@ -152,9 +153,7 @@ def run_all(
     workers: int,
     worker_model: str,
     verbose: bool,
-    progress: Any,
-    master_task: Any,
-    progress_view: Any | None = None,
+    progress: ProgressSink,
 ) -> tuple[dict[str, int], list[Future], Queue]:
     """
     Execute a list of ConversionJobs using a thread or process pool.
@@ -167,10 +166,10 @@ def run_all(
         workers: Maximum number of parallel workers.
         worker_model: Either "thread" for ThreadPoolExecutor or "process" for ProcessPoolExecutor.
         verbose: If True, enable verbose output streaming.
-        progress: Optional rich.progress.Progress instance.
-        master_task: Optional rich.progress.TaskID for the master progress task.
-        progress_view: Optional ProgressView instance. When provided, per-job bars
-            are added and removed as STARTED/FINISHED events are drained.
+        progress: A ProgressSink used to report master-bar advances, per-job bars,
+            and log lines. In parallel (workers > 1) mode the caller drains the
+            shared event queue and forwards events here. In single-worker mode the
+            events are drained inline alongside job completion.
 
     Returns:
         A tuple of (summary dict with success/skipped/failed counts, list of futures,
@@ -210,7 +209,7 @@ def run_all(
             return summary, futures, events
 
         for future in as_completed(futures):
-            _drain_events_into_ui(events, progress_view)
+            _drain_events_into_ui(events, progress)
             status, infile_name, error_msg = future.result()
 
             if status == "SUCCESS":
@@ -220,30 +219,30 @@ def run_all(
             else:
                 summary["failed"] += 1
 
-            if progress is not None and master_task is not None:
-                progress.update(master_task, advance=1)
+            progress.advance()
 
     return summary, futures, events
 
 
-def _drain_events_into_ui(events: Queue, progress_view: Any | None) -> None:
+def _drain_events_into_ui(events: Queue, progress: ProgressSink) -> dict[str, SubtaskID]:
     """
     Drain queued (JobEventKind, payload) tuples from workers and apply UI updates
     on the calling thread. Per-job bars are added on STARTED and removed on FINISHED.
+    Returns a dict mapping infile_name to SubtaskID for active in-flight jobs.
     """
+    job_tasks: dict[str, SubtaskID] = {}
     while True:
         try:
             kind, payload = events.get_nowait()
         except Exception:
-            return
-        if progress_view is None:
-            continue
+            return job_tasks
+        infile_name = str(payload)
         if kind == JobEventKind.LOG:
-            progress_view.update_log([str(payload)])
+            progress.log(infile_name)
         elif kind == JobEventKind.STARTED:
-            progress_view.add_job_task(str(payload))
+            job_tasks[infile_name] = progress.start_subtask(infile_name)
         elif kind == JobEventKind.FINISHED:
-            infile_name = str(payload)
-            if infile_name in progress_view._job_tasks:
-                task_id = progress_view._job_tasks[infile_name]
-                progress_view.remove_job_task(task_id)
+            subtask_id = job_tasks.pop(infile_name, None)
+            if subtask_id is not None:
+                progress.finish_subtask(subtask_id)
+    return job_tasks
