@@ -93,6 +93,7 @@ class ProgressView:
         self._log_lines: deque[str] = deque(maxlen=15)
         self._poll_thread: threading.Thread | None = None
         self._poll_stop = threading.Event()
+        self._layout: Layout | None = None
 
     def add_job_task(self, infile_name: str) -> TaskID:
         """
@@ -149,14 +150,14 @@ class ProgressView:
 
         Rebuilds the progress panel and verbose log panel from current state.
         """
-        if self._live is not None:
+        if self._live is not None and self._layout is not None:
             from rich.text import Text
 
             log_text = Text.from_markup("\n".join(self._log_lines)) if self._log_lines else Text("[dim]Waiting for output...[/dim]")
-            self._live.layout["main"].update(
+            self._layout["main"].update(
                 Panel(self.progress, title="Progress", border_style="green")
             )
-            self._live.layout["footer"].update(
+            self._layout["footer"].update(
                 Panel(log_text, title="CoreConverter Live Verbose Stream", border_style="blue")
             )
             self._live.refresh()
@@ -179,6 +180,7 @@ class ProgressView:
 
         if self._workers > 1:
             layout = self._build_layout()
+            self._layout = layout
             self._live = Live(
                 layout,
                 console=self._console,
@@ -192,6 +194,7 @@ class ProgressView:
             self._poll_thread.start()
         elif self._verbose:
             layout = self._build_layout()
+            self._layout = layout
             self._live = Live(
                 layout,
                 console=self._console,
