@@ -134,17 +134,12 @@ class _ProgressRenderer:
     def render(self) -> Table:
         """Build the Table renderable for the current state."""
         table = Table.grid(padding=(0, 1), pad_edge=False)
-        table.add_column(style="progress.description", width=30)
-
-        table.add_column(style="progress.bar", width=self.BAR_WIDTH)
-
-        pct_col_text = Text("     ", style="progress.percentage")
-        table.add_column(pct_col_text)
-
-        table.add_column(style="progress.remaining", width=10)
-
+        table.add_column(style="cyan", width=30)
+        table.add_column(style="green", width=self.BAR_WIDTH)
+        table.add_column(Text("     ", style="yellow"))
+        table.add_column(style="magenta", width=10)
         if self._total_bytes is not None:
-            table.add_column(style="progress.filesize", width=12)
+            table.add_column(style="blue", width=12)
 
         master_bar = self._render_bar(self._master_done, self._total, "bold")
         elapsed_s = self._master_done  # placeholders
@@ -189,7 +184,7 @@ class _ProgressRenderer:
     def _render_bar_indeterminate(self) -> Text:
         """Render an indeterminate (animated) bar."""
         bar = "▰" * (self.BAR_WIDTH // 2) + "▱" * (self.BAR_WIDTH - self.BAR_WIDTH // 2)
-        return Text(bar, style="progress bar")
+        return Text(bar, style="cyan")
 
     def _pct(self, done: int, total: int) -> str:
         if total <= 0:
