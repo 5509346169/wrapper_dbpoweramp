@@ -7,13 +7,11 @@ from pathlib import Path
 
 from typing import Optional
 
+from src.models.types import AUDIO_EXTENSIONS
 from src.ui.progress_view import ProgressSink
 
 
-AUDIO_EXTENSIONS: set[str] = {".flac", ".mp3", ".m4a", ".opus", ".ogg", ".wav", ".ape", ".wv", ".tta"}
-
-
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=False, slots=True)
 class IndexRow:
     """A row in the temp index snapshot. ``dest_path`` and ``job_type`` are filled by the job builder."""
 
@@ -93,6 +91,8 @@ def scan_with_progress(
         ``sidecar_map`` is a ``dict[Path, str]`` from source path to sidecar basenames.
     """
     audio_files = _discover_audio_files(input_path, excludes)
+    total = len(audio_files)
+    progress.log(f"Scanning {total} file(s)...")
     rows: list[IndexRow] = []
     sidecar_map: dict[Path, str] = {}
 

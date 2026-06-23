@@ -4,8 +4,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from src.index.builder import IndexBuilder
-from src.index.scanner import IndexRow
-from src.models.types import ConversionJob, LossyAction, PresetConfig
+from src.index.scanner import IndexRow, _discover_audio_files
+from src.models.types import AUDIO_EXTENSIONS, ConversionJob, LossyAction, PresetConfig
 from src.pathing.resolver import compute_output_path
 
 if TYPE_CHECKING:
@@ -13,35 +13,7 @@ if TYPE_CHECKING:
 
     from src.ui.progress_view import ProgressSink
 
-
-AUDIO_EXTENSIONS: set[str] = {".flac", ".mp3", ".m4a", ".opus", ".ogg", ".wav", ".ape", ".wv", ".tta"}
-
-
-def discover_audio_files(input_path: Path, excludes: list[str]) -> list[Path]:
-    """
-    Discover audio files from the given input path.
-
-    Args:
-        input_path: A file or directory to scan for audio files.
-        excludes: List of directory names to exclude from the walk (basename match).
-
-    Returns:
-        List of Path objects for discovered audio files.
-    """
-    if input_path.is_file():
-        return [input_path]
-
-    exclude_set = set(excludes)
-    audio_files: list[Path] = []
-
-    for item in input_path.rglob("*"):
-        if item.is_dir():
-            continue
-        if item.suffix.lower() in AUDIO_EXTENSIONS:
-            if item.parent.name not in exclude_set:
-                audio_files.append(item)
-
-    return sorted(audio_files)
+# Note: discover_audio_files is imported from src.index.scanner._discover_audio_files
 
 
 def _classify(
@@ -54,7 +26,10 @@ def _classify(
     output_root: Path,
     preset: PresetConfig,
 ) -> None:
-    """Classify a single row and write it to the index DB immediately."""
+    """Classify a single row and write it to the index DB immediately.
+
+    Note: mutates ``row`` in-place via ``object.__setattr__`` (IndexRow is frozen).
+    """
     f = Path(row.source_path)
 
     if no_lossy_check:
@@ -92,17 +67,20 @@ def enrich_index_rows_streaming(
     preset: PresetConfig,
     lossy_action: LossyAction | None,
     no_lossy_check: bool,
-    ffprobe_binary: str,
+    ffprobe_path: str,
     probe_workers: int,
     progress: "ProgressSink",
     index_builder: IndexBuilder | None,
 ) -> list[Path]:
     """Stream-probe files, write rows to the index DB incrementally, and report live progress.
 
-    1. Kick off all ffprobe calls in parallel immediately.
-    2. As each result arrives (via ``as_completed``), classify the row, write it to the
-       index DB, and advance the progress bar — all in the main thread.
-    3. Returns the list of lossy source paths found.
+    Detection cascade (fastest first):
+      1. Extension — deterministic, zero I/O (most files resolved here).
+      2. Folder-name heuristic — zero I/O (e.g. "[256Kbps-AAC]" in a parent dir).
+      3. ffprobe stream probe — only for ambiguous extensions (.m4a, etc.).
+
+    Progress is advanced once per file as it is resolved — either immediately
+    (tiers 1-2, main thread) or as the ffprobe future completes (tier 3, thread pool).
 
     Args:
         scan_rows:     Rows from the scanner (source_path, file_size, sidecar_files, mtime set).
@@ -113,16 +91,24 @@ def enrich_index_rows_streaming(
     Returns:
         List of source paths that are lossy (for the lossy-action gate).
     """
-    from concurrent.futures import Future
+    from concurrent.futures import Future, as_completed
 
-    from src.audio.inspector import probe_generator
+    from src.audio.inspector import (
+        _classify_by_ext_and_folder,
+        _is_lossy_by_probe,
+    )
 
-    progress.start_phase("Probing", total=len(scan_rows))
+    total = len(scan_rows)
+    progress.start_phase("Probing", total=total)
 
-    # Build a lookup from Path -> row for O(1) assignment after probe returns.
+    # Build a lookup from Path -> row for O(1) assignment after each result.
     path_to_row: dict[Path, IndexRow] = {Path(r.source_path): r for r in scan_rows}
+    files = list(path_to_row.keys())
+
+    lossy_files_found: list[Path] = []
 
     if no_lossy_check:
+        # Fast path: skip all detection, treat everything as lossless.
         for row in scan_rows:
             _classify(
                 row, None, lossy_action, no_lossy_check,
@@ -131,37 +117,66 @@ def enrich_index_rows_streaming(
             if index_builder is not None:
                 index_builder.add(row)
             progress.advance()
-        lossy_files_found: list[Path] = []
     else:
-        # Launch all probes in parallel; consume results as they complete.
-        files = list(path_to_row.keys())
-        futures = probe_generator(files, ffprobe_binary, probe_workers)
-        pending: dict[Future, Path] = {fut: path_to_row[fut] for fut in futures}
+        # Tier 1 + 2 synchronously on the main thread (no I/O).
+        classified = _classify_by_ext_and_folder(files)
 
-        lossy_files_found = []
-
-        for future in futures:
-            infile = pending.pop(future)
-            try:
-                _, is_lossy_val = future.result()
-            except Exception:
-                # ProbeError means ffprobe couldn't read the file — treat as lossless
-                # so the conversion backend surfaces the real error instead.
-                is_lossy_val = None
-
-            row = path_to_row[infile]
-            _classify(
-                row, is_lossy_val, lossy_action, no_lossy_check,
-                input_root, source_root, output_root, preset,
-            )
-
-            if index_builder is not None:
-                index_builder.add(row)
-
-            if is_lossy_val:
-                lossy_files_found.append(infile)
-
+        # Immediately resolve files where tiers 1-2 gave an answer.
+        ambiguous_files: list[Path] = []
+        for f in files:
+            result = classified[f]
+            row = path_to_row[f]
+            if result is not None:
+                _classify(
+                    row, result, lossy_action, no_lossy_check,
+                    input_root, source_root, output_root, preset,
+                )
+                if index_builder is not None:
+                    index_builder.add(row)
+                if result:
+                    lossy_files_found.append(f)
+            else:
+                ambiguous_files.append(f)
             progress.advance()
+
+        # Tier 3: ffprobe only for ambiguous files.
+        if ambiguous_files:
+            progress.log(f"Probing {len(ambiguous_files)} ambiguous files with ffprobe ({probe_workers} workers)...")
+            _LOG_INTERVAL = 10
+            _tier3_done = 0
+
+            def probe_one(file: Path) -> tuple[Path, bool]:
+                return (file, _is_lossy_by_probe(file, ffprobe_path))
+
+            with ThreadPoolExecutor(max_workers=probe_workers) as executor:
+                future_map: dict[Future, Path] = {
+                    executor.submit(probe_one, f): f for f in ambiguous_files
+                }
+                for future in as_completed(future_map):
+                    infile = future_map[future]
+                    try:
+                        _, is_lossy_val = future.result()
+                    except Exception:
+                        # ProbeError — treat as lossless so the conversion backend
+                        # surfaces the real error rather than skipping the file.
+                        is_lossy_val = None
+
+                    row = path_to_row[infile]
+                    _classify(
+                        row, is_lossy_val, lossy_action, no_lossy_check,
+                        input_root, source_root, output_root, preset,
+                    )
+                    if index_builder is not None:
+                        index_builder.add(row)
+                    if is_lossy_val:
+                        lossy_files_found.append(infile)
+                    progress.advance()
+                    _tier3_done += 1
+                    if _tier3_done % _LOG_INTERVAL == 0:
+                        total_done = total - len(ambiguous_files) + _tier3_done
+                        progress.log(f"Probing {total_done}/{total} ({total_done * 100 // total}%)...")
+
+            progress.log(f"Probing done. {len(lossy_files_found)} lossy file(s) found.")
 
     progress.stop()
     return lossy_files_found
@@ -175,7 +190,7 @@ def enrich_index_rows(
     preset: PresetConfig,
     lossy_action: LossyAction | None,
     no_lossy_check: bool,
-    ffprobe_binary: str,
+    ffprobe_path: str,
     probe_workers: int,
 ) -> list[Path]:
     """Fill ``dest_path``, ``job_type``, and ``is_lossy`` on each IndexRow in place.
@@ -192,7 +207,7 @@ def enrich_index_rows(
         is_lossy_map: dict[Path, bool | None] = {f: None for f in files}
     else:
         from src.audio.inspector import probe_many
-        is_lossy_map = probe_many(files, ffprobe_binary, probe_workers)
+        is_lossy_map = probe_many(files, ffprobe_path, probe_workers)
 
     lossy_files_found: list[Path] = []
 
@@ -244,7 +259,7 @@ def build_jobs(
     preset: PresetConfig,
     lossy_action: LossyAction | None,
     no_lossy_check: bool,
-    ffprobe_binary: str,
+    ffprobe_path: str,
     probe_workers: int,
     index_rows_out: list[IndexRow] | None = None,
     sidecar_map: dict[Path, str] | None = None,
@@ -259,7 +274,7 @@ def build_jobs(
         preset: The preset configuration to use.
         lossy_action: What to do with lossy source files (None = leave unspecified).
         no_lossy_check: If True, skip lossy probing entirely.
-        ffprobe_binary: Path to the ffprobe binary.
+        ffprobe_path: Path to the ffprobe binary.
         probe_workers: Number of workers for parallel probing.
         index_rows_out: If provided, enriched IndexRow entries (with final
             ``dest_path``, ``job_type``, and ``is_lossy``) are appended here
@@ -297,7 +312,7 @@ def build_jobs(
             preset=preset,
             lossy_action=lossy_action,
             no_lossy_check=no_lossy_check,
-            ffprobe_binary=ffprobe_binary,
+            ffprobe_path=ffprobe_path,
             probe_workers=probe_workers,
         )
         # Copy enriched rows to index_rows_out and convert to ConversionJob.
@@ -356,7 +371,7 @@ def build_jobs(
         preset=preset,
         lossy_action=lossy_action,
         no_lossy_check=no_lossy_check,
-        ffprobe_binary=ffprobe_binary,
+        ffprobe_path=ffprobe_path,
         probe_workers=probe_workers,
     )
 

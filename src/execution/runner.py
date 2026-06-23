@@ -89,7 +89,8 @@ def run_job(
             try:
                 job.outfile.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(job.infile, job.outfile)
-            except Exception as e:
+            except (shutil.Error, OSError) as e:
+                print(f"[runner] copy failed for {job.infile} -> {job.outfile}: {e}")
                 status = "FAILED"
                 error_msg = str(e)
             else:
@@ -139,6 +140,7 @@ def run_job(
             error_msg = f"unknown job_type: {job.job_type}"
 
     finally:
+        db.close()
         if events is not None:
             events.put((JobEventKind.FINISHED, infile_name))
 
@@ -205,21 +207,19 @@ def run_all(
             for job in jobs
         ]
 
-        if workers > 1:
-            return summary, futures, events
+        if workers == 1:
+            for future in as_completed(futures):
+                _drain_events_into_ui(events, progress)
+                status, infile_name, error_msg = future.result()
 
-        for future in as_completed(futures):
-            _drain_events_into_ui(events, progress)
-            status, infile_name, error_msg = future.result()
+                if status == "SUCCESS":
+                    summary["success"] += 1
+                elif status == "SKIPPED":
+                    summary["skipped"] += 1
+                else:
+                    summary["failed"] += 1
 
-            if status == "SUCCESS":
-                summary["success"] += 1
-            elif status == "SKIPPED":
-                summary["skipped"] += 1
-            else:
-                summary["failed"] += 1
-
-            progress.advance()
+                progress.advance()
 
     return summary, futures, events
 
@@ -234,7 +234,7 @@ def _drain_events_into_ui(events: Queue, progress: ProgressSink) -> dict[str, Su
     while True:
         try:
             kind, payload = events.get_nowait()
-        except Exception:
+        except queue.Empty:
             return job_tasks
         infile_name = str(payload)
         if kind == JobEventKind.LOG:

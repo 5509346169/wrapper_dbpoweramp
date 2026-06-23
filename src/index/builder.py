@@ -52,11 +52,10 @@ class IndexBuilder:
                 ")"
             )
             # Migration: add is_lossy to tables created by older versions.
-            try:
+            cur = self._conn.execute("PRAGMA table_info(index_entries)")
+            existing_cols = {row[1] for row in cur.fetchall()}
+            if "is_lossy" not in existing_cols:
                 self._conn.execute("ALTER TABLE index_entries ADD COLUMN is_lossy INTEGER")
-            except sqlite3.OperationalError:
-                # Column already exists — nothing to do.
-                pass
             self._conn.commit()
 
     def add(self, row: IndexRow) -> None:

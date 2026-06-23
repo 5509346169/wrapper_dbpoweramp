@@ -48,6 +48,9 @@ class RecordingProgressSink:
     def stop(self) -> None:
         self._record("stop", (), {})
 
+    def stop_phase(self) -> None:
+        self._record("stop_phase", (), {})
+
 
 # ---------------------------------------------------------------------------
 # Scan tests
@@ -157,7 +160,7 @@ def test_drain_multiple_inflight_jobs_ordered() -> None:
         assert finish_sid is start_sid
 
 
-def test_drain_unknown_event_kind_raises() -> None:
+def test_drain_unknown_event_kind_silent() -> None:
     """Unknown JobEventKind does not call any sink method (queue drains silently)."""
     events: Queue = Queue()
     events.put(("UNKNOWN", "file1.flac"))
@@ -232,6 +235,15 @@ def test_rich_double_stop_is_safe() -> None:
 class _StubBackend:
     """Minimal ConversionBackend stub that pushes fixed events and returns fixed results."""
 
+    def name(self) -> Backend:
+        return Backend.NATIVE_FFMPEG
+
+    def supports(self, preset: PresetConfig) -> bool:
+        return True
+
+    def validate_environment(self) -> None:
+        pass
+
     def __init__(self, events: list[tuple[Any, Any]], status: str = "SUCCESS") -> None:
         self._events = events
         self._status: str = status
@@ -241,6 +253,8 @@ class _StubBackend:
     ) -> Any:
         from src.models.types import JobResult
 
+        if job.job_type == "skip":
+            return JobResult(job=job, status="SKIPPED")
         return JobResult(job=job, status=self._status)
 
 
@@ -339,7 +353,11 @@ def test_run_all_parallel_worker_produces_events(
 
     import time
 
-    time.sleep(0.1)
+    start = time.monotonic()
+    while time.monotonic() - start < 2.0:
+        if not events.empty():
+            break
+        time.sleep(0.01)
     _drain_events_into_ui(events, sink)
 
     methods = [c[0] for c in sink.calls]

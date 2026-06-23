@@ -16,7 +16,7 @@ backend:
     opusenc_binary: "opusenc"      # used only if a preset prefers the standalone opusenc CLI
 
 tools:
-  ffprobe_binary: "ffprobe"        # always native, regardless of conversion backend
+  ffprobe_path: "ffprobe"        # always native, regardless of conversion backend
 
 history:
   db_path: "conversion_history.db"

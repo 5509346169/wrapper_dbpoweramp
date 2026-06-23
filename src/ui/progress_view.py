@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-import sys
 from collections import deque
 from typing import Protocol
 
-from rich.console import Console
+from rich.console import Console, Group
 from rich.live import Live
-from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
+
+import time as _time
 
 if False:
     pass  # no TYPE_CHECKING imports needed
@@ -51,7 +51,7 @@ class ProgressSink(Protocol):
     """Typed protocol consumed by ``runner.run_all`` and ``scanner.scan_with_progress``."""
 
     def start_phase(self, name: str, total: int) -> None:
-        """Begin a new phase (e.g. 'Scanning', 'Converting')."""
+        """Begin a new phase (e.g. 'Scanning', 'Probing', 'Converting')."""
         ...
 
     def advance(self, amount: int = 1) -> None:
@@ -67,16 +67,20 @@ class ProgressSink(Protocol):
         ...
 
     def log(self, message: str) -> None:
-        """Append a message to the verbose log panel."""
+        """Append a message to the log area."""
         ...
 
     def stop(self) -> None:
         """Stop rendering. Safe to call without a prior ``start_phase`` call."""
         ...
 
+    def stop_phase(self) -> None:
+        """Clean up the current phase and reset the Live renderer to None."""
+        ...
+
 
 # ---------------------------------------------------------------------------
-# Internal progress-bar implementation (replaces rich.progress.Progress)
+# Internal progress-bar implementation
 # ---------------------------------------------------------------------------
 
 
@@ -96,22 +100,20 @@ class _ProgressRenderer:
     Self-contained progress-bar renderer.
 
     Replaces rich.progress.Progress so that the single rich.live.Live instance
-    in RichProgressSink is the only Live context active — avoiding the
-    "Only one live display may be active at once" conflict that arises when both
-    Progress.start() and Live.__enter__() are called together.
+    in RichProgressSink is the only Live context active.
 
-    Master bar columns:  TextColumn | BarColumn | TaskProgressColumn |
-                          TimeRemainingColumn | TransferSpeedColumn (gated)
-    Per-job bars:         indeterminate (spinning animation, no percentage).
+    Master bar columns:  description | bar | pct | ETA | size (gated)
+    Per-job bars:        indeterminate (spinning animation, no percentage).
     """
 
-    BAR_WIDTH = 20
+    BAR_WIDTH = 18
 
     def __init__(
         self,
         total: int,
         total_bytes: int | None,
         console: Console,
+        phase_name: str = "Phase",
     ) -> None:
         self._total = total
         self._total_bytes = total_bytes
@@ -119,6 +121,11 @@ class _ProgressRenderer:
         self._master_done: int = 0
         self._bars: dict[int, _BarState] = {}
         self._next_id: int = 0
+        self._start_time: float | None = None
+        self._phase_name = phase_name
+
+    def set_phase_name(self, name: str) -> None:
+        self._phase_name = name
 
     def add_bar(self, description: str, total: int | None = None) -> int:
         """Add a new bar; returns the internal integer ID."""
@@ -134,24 +141,26 @@ class _ProgressRenderer:
     def render(self) -> Table:
         """Build the Table renderable for the current state."""
         table = Table.grid(padding=(0, 1), pad_edge=False)
-        table.add_column(style="cyan", width=30)
+        table.add_column(style="cyan", width=28)
         table.add_column(style="green", width=self.BAR_WIDTH)
-        table.add_column(Text("     ", style="yellow"))
+        table.add_column(style="yellow", width=7)
         table.add_column(style="magenta", width=10)
         if self._total_bytes is not None:
-            table.add_column(style="blue", width=12)
+            table.add_column(style="blue", width=11)
 
         master_bar = self._render_bar(self._master_done, self._total, "bold")
-        elapsed_s = self._master_done  # placeholders
+        if self._start_time is None:
+            self._start_time = _time.monotonic()
+        elapsed_now = _time.monotonic() - self._start_time
         remaining_s = (
             "not started"
             if self._master_done == 0
-            else self._eta_str(elapsed_s, self._master_done, self._total)
+            else self._eta_str(elapsed_now, self._master_done, self._total)
         )
         bytes_str = self._format_bytes(self._total_bytes) if self._total_bytes else ""
 
         row: list[Text | str] = [
-            f"[bold]Phase[/] [bold cyan]{self._total} files[/]",
+            f"[bold]{self._phase_name}[/] [bold cyan]{self._total}[/]",
             master_bar,
             f"{self._pct(self._master_done, self._total):>6}",
             remaining_s,
@@ -163,7 +172,7 @@ class _ProgressRenderer:
         for bar_id, bar in self._bars.items():
             job_bar = self._render_bar_indeterminate()
             table.add_row(
-                f"[cyan]{bar.description[:28]}[/]",
+                f"[dim]{bar.description[:26]}[/]",
                 job_bar,
                 "[dim]---[/]",
                 "[dim]...[/]",
@@ -182,19 +191,18 @@ class _ProgressRenderer:
         return Text(bar, style=style)
 
     def _render_bar_indeterminate(self) -> Text:
-        """Render an indeterminate (animated) bar."""
+        """Render an indeterminate bar."""
         bar = "▰" * (self.BAR_WIDTH // 2) + "▱" * (self.BAR_WIDTH - self.BAR_WIDTH // 2)
         return Text(bar, style="cyan")
 
-    def _pct(self, done: int, total: int) -> str:
+    @staticmethod
+    def _pct(done: int, total: int) -> str:
         if total <= 0:
             return "  0%"
         return f"{min(done * 100 // total, 100):>3}%"
-        # remaining (not currently used in columns but available)
-        _ = (self._master_done, self._total)
-        return ""
 
-    def _eta_str(self, elapsed: float, done: int, total: int) -> str:
+    @staticmethod
+    def _eta_str(elapsed: float, done: int, total: int) -> str:
         if done <= 0 or elapsed <= 0:
             return "  ETA: --:--"
         rate = done / elapsed
@@ -229,17 +237,16 @@ class RichProgressSink:
     Concrete ``ProgressSink`` backed by ``rich.live.Live``.
 
     Owns a single ``Live`` context and a single refresh path.  Every public
-    method call refreshes the display, so callers in parallel workers do not
-    need an external timer.
+    method call refreshes the display.
 
-    Master bar columns: ``TextColumn``, ``BarColumn``, ``TaskProgressColumn``,
-    ``TimeRemainingColumn``, plus ``TransferSpeedColumn`` when the ``total_bytes``
-    hint is provided.
-
-    Per-job bars stay indeterminate (backend does not report per-file progress).
-
-    Log panel: ``deque(maxlen=30)`` with softer ``dim`` border styling.
+    Compact layout (no panels, no borders):
+      - Line 1:  [PhaseName N files]  ████████░░░░░░░░  83%  ETA 0:32  1.2 GiB
+      - Lines 2+: [dim]log message 1[/dim]
+                   [dim]log message 2[/dim]
+                   ...
     """
+
+    LOG_LINES = 3
 
     def __init__(
         self,
@@ -249,7 +256,7 @@ class RichProgressSink:
         self._total_files: int | None = total_files
         self._total_bytes: int | None = total_bytes
 
-        self._console = Console(file=sys.stdout)
+        self._console = Console()
         self._live: Live | None = None
         self._renderer: _ProgressRenderer | None = None
         self._log_lines: deque[str] = deque(maxlen=30)
@@ -262,40 +269,24 @@ class RichProgressSink:
         """Rebuild the layout and push a refresh to the Live display."""
         if self._live is None:
             return
-        layout = self._make_layout()
-        self._live.update(layout)
+        self._live.update(self._make_renderable())
         self._live.refresh()
 
-    def _make_layout(self) -> Layout:  # type: ignore[name-defined]
-        """Build (or rebuild) the two-panel layout."""
-        from rich.layout import Layout
-
-        layout = Layout()
-        layout.split(
-            Layout(name="main", ratio=2),
-            Layout(name="footer", ratio=1),
-        )
-        log_text = (
-            Text.from_markup("\n".join(self._log_lines))
-            if self._log_lines
-            else Text("[dim]Waiting for output...[/dim]")
-        )
+    def _make_renderable(self) -> Columns:
+        """Build the compact inline stack: bar row + up to LOG_LINES log lines."""
         renderer = self._renderer
         if renderer is None:
-            progress_renderable: object = Text("[dim]Idle[/dim]")
+            progress_renderable = Text("[dim]Idle[/dim]")
         else:
             progress_renderable = renderer.render()
-        layout["main"].update(
-            Panel(progress_renderable, title="Progress", border_style="green")
-        )
-        layout["footer"].update(
-            Panel(
-                log_text,
-                title="CoreConverter Live Verbose Stream",
-                border_style="dim",
-            )
-        )
-        return layout
+
+        lines: list[Text] = [progress_renderable]
+
+        if self._log_lines:
+            for msg in list(self._log_lines)[-self.LOG_LINES:]:
+                lines.append(Text.from_markup(f"[dim]  {msg}[/dim]"))
+
+        return Group(*lines)
 
     # ------------------------------------------------------------------
     # ProgressSink implementation
@@ -307,9 +298,10 @@ class RichProgressSink:
             total=total,
             total_bytes=self._total_bytes,
             console=self._console,
+            phase_name=name,
         )
         self._live = Live(
-            self._make_layout(),
+            self._make_renderable(),
             console=self._console,
             refresh_per_second=1,
             transient=False,
@@ -334,14 +326,14 @@ class RichProgressSink:
         return SubtaskID(bar_id)
 
     def finish_subtask(self, subtask_id: SubtaskID) -> None:
-        """Mark a per-job bar done and remove it."""
+        """Mark a per-job bar done and remove it from the display."""
         if self._renderer is None:
             return
         self._renderer.finish_bar(bar_id=subtask_id._id)
         self._refresh()
 
     def log(self, message: str) -> None:
-        """Append a message to the log panel."""
+        """Append a message to the log area."""
         self._log_lines.append(message)
         self._refresh()
 
@@ -349,6 +341,16 @@ class RichProgressSink:
         """
         Stop rendering. Safe to call without a prior ``start_phase`` call.
         """
+        if self._live is not None:
+            try:
+                self._live.__exit__(None, None, None)
+            except Exception:
+                pass
+            self._live = None
+        self._renderer = None
+
+    def stop_phase(self) -> None:
+        """Clean up the current Live instance and reset the renderer."""
         if self._live is not None:
             try:
                 self._live.__exit__(None, None, None)

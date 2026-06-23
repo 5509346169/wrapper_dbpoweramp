@@ -55,7 +55,7 @@ class BackendConfig:
 class ToolsConfig:
     """Tool binary paths: ffprobe."""
 
-    ffprobe_binary: str
+    ffprobe_path: str
 
 
 @dataclass
@@ -206,7 +206,7 @@ def load_settings(path: Path | str) -> Settings:
     # -- tools --
     tools_data = _get(data, "tools", "tools")
     tools = ToolsConfig(
-        ffprobe_binary=_str(tools_data, "ffprobe_binary", "tools.ffprobe_binary", allow_empty=False),
+        ffprobe_path=_str(tools_data, "ffprobe_path", "tools.ffprobe_path", allow_empty=False),
     )
 
     # -- history --

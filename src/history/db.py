@@ -120,6 +120,11 @@ class ConversionDB:
         A file previously logged as 'copy' but now requested as 'convert' will
         NOT be skipped — job_type must also match.
 
+        NOTE: source-file mtime is NOT checked. A re-encode of an unchanged
+        source file will be re-run even if a SUCCESS record already exists.
+        This is a known limitation — the index tracks dest_path and job_type
+        match but not the source's modification time.
+
         Args:
             source: Source file path.
             dest: Destination file path.

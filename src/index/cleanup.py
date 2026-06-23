@@ -9,7 +9,7 @@ explicitly: ``from builtins import IndexError as _BuiltinIndexError``.
 
 from pathlib import Path
 
-from src.exceptions import IndexError
+from src.exceptions import IndexError  # noqa: F401
 
 
 def cleanup_index(
@@ -33,6 +33,3 @@ def cleanup_index(
             print(f"[yellow]Warning:[/yellow] failed to remove index file {db_path}: {e}")
 
 
-# Re-export IndexError so callers can import it from here rather than from
-# exceptions directly. This keeps all index-related public API in one package.
-IndexError = IndexError  # type: ignore[assignment, misc]

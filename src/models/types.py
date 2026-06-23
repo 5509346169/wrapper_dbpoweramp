@@ -25,6 +25,8 @@ class LossyAction(str, Enum):
 JobType = Literal["convert", "copy", "skip"]
 JobStatus = Literal["SUCCESS", "FAILED", "SKIPPED"]
 
+AUDIO_EXTENSIONS: set[str] = {".flac", ".mp3", ".m4a", ".opus", ".ogg", ".wav", ".ape", ".wv", ".tta"}
+
 
 @dataclass
 class SidecarPolicy:
