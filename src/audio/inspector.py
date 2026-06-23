@@ -103,18 +103,21 @@ def _is_lossy_by_folder(path: Path) -> Optional[bool]:
     Scans from the file's immediate parent up to the filesystem root.
     Stops at the first directory whose name is entirely numeric (e.g. a numeric
     folder like "26005" in a sequential scan) to avoid false positives.
+    Also stops when we reach the filesystem root (where parent == self).
     """
     current: Optional[Path] = path.parent
     while current is not None:
         folder_lower = current.name.lower()
-        # Stop scanning upward at purely numeric directory names (common in
-        # sorted/concatenated rips and some tool outputs).
         if folder_lower.isdigit():
             break
         for token in LOSSY_FOLDER_TOKENS:
             if token in folder_lower:
                 return True
-        current = current.parent
+        # Guard against infinite loop at filesystem root (e.g. C:\ on Windows).
+        parent = current.parent
+        if parent == current:
+            break
+        current = parent
     return None
 
 

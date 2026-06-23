@@ -6,7 +6,7 @@ import shutil
 from concurrent.futures import Future, ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from enum import Enum
 from pathlib import Path
-from queue import Queue
+from queue import Empty, Queue
 from typing import Callable, Optional
 
 from src.backends.base import ConversionBackend
@@ -234,7 +234,7 @@ def _drain_events_into_ui(events: Queue, progress: ProgressSink) -> dict[str, Su
     while True:
         try:
             kind, payload = events.get_nowait()
-        except queue.Empty:
+        except Empty:
             return job_tasks
         infile_name = str(payload)
         if kind == JobEventKind.LOG:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from collections import deque
 from typing import Protocol
 
@@ -256,7 +257,11 @@ class RichProgressSink:
         self._total_files: int | None = total_files
         self._total_bytes: int | None = total_bytes
 
-        self._console = Console()
+        self._console = Console(
+            force_terminal=True,
+            legacy_windows=False,
+            file=sys.stdout,
+        )
         self._live: Live | None = None
         self._renderer: _ProgressRenderer | None = None
         self._log_lines: deque[str] = deque(maxlen=30)

@@ -146,3 +146,8 @@ class ConversionDB:
             if row is None:
                 return False
             return row[0] == "SUCCESS"
+
+    def close(self) -> None:
+        """Close the SQLite connection."""
+        with self._lock:
+            self._conn.close()
