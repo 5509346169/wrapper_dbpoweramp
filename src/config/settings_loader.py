@@ -53,9 +53,9 @@ class BackendConfig:
 
 @dataclass
 class ToolsConfig:
-    """Tool binary paths: ffprobe."""
+    """Tool binary paths (mutagen requires no external binary)."""
 
-    ffprobe_path: str
+    pass  # empty for now; kept for future tool paths
 
 
 @dataclass
@@ -204,10 +204,11 @@ def load_settings(path: Path | str) -> Settings:
     )
 
     # -- tools --
-    tools_data = _get(data, "tools", "tools")
-    tools = ToolsConfig(
-        ffprobe_path=_str(tools_data, "ffprobe_path", "tools.ffprobe_path", allow_empty=False),
-    )
+    tools_data = data.get("tools")
+    if isinstance(tools_data, dict) and tools_data:
+        tools = ToolsConfig()
+    else:
+        tools = ToolsConfig()  # mutagen requires no external binary
 
     # -- history --
     history_data = _get(data, "history", "history")

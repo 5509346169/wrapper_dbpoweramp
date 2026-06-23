@@ -92,7 +92,7 @@ def parse_args(argv: list[str] | None = None) -> "Namespace":
     parser.add_argument(
         "--no-lossy-check",
         action="store_true",
-        help="Disable ffprobe lossy detection entirely",
+        help="Disable lossy detection entirely (uses mutagen internally)",
     )
     parser.add_argument(
         "-w", "--workers",

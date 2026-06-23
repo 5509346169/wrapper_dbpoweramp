@@ -15,8 +15,7 @@ backend:
     lame_binary: "lame"            # used only if a preset prefers the standalone lame CLI
     opusenc_binary: "opusenc"      # used only if a preset prefers the standalone opusenc CLI
 
-tools:
-  ffprobe_path: "ffprobe"        # always native, regardless of conversion backend
+tools: {}  # mutagen is used for audio metadata; no external binaries needed
 
 history:
   db_path: "conversion_history.db"

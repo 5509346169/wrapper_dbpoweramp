@@ -1,19 +1,12 @@
 """jobs/builder.py: Build ConversionJob lists from discovered audio files."""
 
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from src.index.builder import IndexBuilder
 from src.index.scanner import IndexRow, _discover_audio_files
 from src.models.types import AUDIO_EXTENSIONS, ConversionJob, LossyAction, PresetConfig
 from src.pathing.resolver import compute_output_path
-
-if TYPE_CHECKING:
-    from concurrent.futures import Future
-
-    from src.ui.progress_view import ProgressSink
-
-# Note: discover_audio_files is imported from src.index.scanner._discover_audio_files
 
 
 def _classify(
@@ -67,7 +60,6 @@ def enrich_index_rows_streaming(
     preset: PresetConfig,
     lossy_action: LossyAction | None,
     no_lossy_check: bool,
-    ffprobe_path: str,
     probe_workers: int,
     progress: "ProgressSink",
     index_builder: IndexBuilder | None,
@@ -77,10 +69,10 @@ def enrich_index_rows_streaming(
     Detection cascade (fastest first):
       1. Extension — deterministic, zero I/O (most files resolved here).
       2. Folder-name heuristic — zero I/O (e.g. "[256Kbps-AAC]" in a parent dir).
-      3. ffprobe stream probe — only for ambiguous extensions (.m4a, etc.).
+      3. mutagen metadata probe — only for ambiguous extensions (.m4a, etc.).
 
     Progress is advanced once per file as it is resolved — either immediately
-    (tiers 1-2, main thread) or as the ffprobe future completes (tier 3, thread pool).
+    (tiers 1-2, main thread) or as the mutagen future completes (tier 3, thread pool).
 
     Args:
         scan_rows:     Rows from the scanner (source_path, file_size, sidecar_files, mtime set).
@@ -95,7 +87,7 @@ def enrich_index_rows_streaming(
 
     from src.audio.inspector import (
         _classify_by_ext_and_folder,
-        _is_lossy_by_probe,
+        _is_lossy_by_mutagen,
     )
 
     total = len(scan_rows)
@@ -139,14 +131,14 @@ def enrich_index_rows_streaming(
                 ambiguous_files.append(f)
             progress.advance()
 
-        # Tier 3: ffprobe only for ambiguous files.
+        # Tier 3: mutagen only for ambiguous files.
         if ambiguous_files:
-            progress.log(f"Probing {len(ambiguous_files)} ambiguous files with ffprobe ({probe_workers} workers)...")
+            progress.log(f"Probing {len(ambiguous_files)} ambiguous files with mutagen ({probe_workers} workers)...")
             _LOG_INTERVAL = 10
             _tier3_done = 0
 
             def probe_one(file: Path) -> tuple[Path, bool]:
-                return (file, _is_lossy_by_probe(file, ffprobe_path))
+                return (file, _is_lossy_by_mutagen(file))
 
             with ThreadPoolExecutor(max_workers=probe_workers) as executor:
                 future_map: dict[Future, Path] = {
@@ -190,7 +182,6 @@ def enrich_index_rows(
     preset: PresetConfig,
     lossy_action: LossyAction | None,
     no_lossy_check: bool,
-    ffprobe_path: str,
     probe_workers: int,
 ) -> list[Path]:
     """Fill ``dest_path``, ``job_type``, and ``is_lossy`` on each IndexRow in place.
@@ -207,7 +198,7 @@ def enrich_index_rows(
         is_lossy_map: dict[Path, bool | None] = {f: None for f in files}
     else:
         from src.audio.inspector import probe_many
-        is_lossy_map = probe_many(files, ffprobe_path, probe_workers)
+        is_lossy_map = probe_many(files, probe_workers)
 
     lossy_files_found: list[Path] = []
 
@@ -259,7 +250,6 @@ def build_jobs(
     preset: PresetConfig,
     lossy_action: LossyAction | None,
     no_lossy_check: bool,
-    ffprobe_path: str,
     probe_workers: int,
     index_rows_out: list[IndexRow] | None = None,
     sidecar_map: dict[Path, str] | None = None,
@@ -274,8 +264,7 @@ def build_jobs(
         preset: The preset configuration to use.
         lossy_action: What to do with lossy source files (None = leave unspecified).
         no_lossy_check: If True, skip lossy probing entirely.
-        ffprobe_path: Path to the ffprobe binary.
-        probe_workers: Number of workers for parallel probing.
+        probe_workers: Number of workers for parallel probing (mutagen I/O).
         index_rows_out: If provided, enriched IndexRow entries (with final
             ``dest_path``, ``job_type``, and ``is_lossy``) are appended here
             for the temp index database.
@@ -312,7 +301,6 @@ def build_jobs(
             preset=preset,
             lossy_action=lossy_action,
             no_lossy_check=no_lossy_check,
-            ffprobe_path=ffprobe_path,
             probe_workers=probe_workers,
         )
         # Copy enriched rows to index_rows_out and convert to ConversionJob.
@@ -371,7 +359,6 @@ def build_jobs(
         preset=preset,
         lossy_action=lossy_action,
         no_lossy_check=no_lossy_check,
-        ffprobe_path=ffprobe_path,
         probe_workers=probe_workers,
     )
 

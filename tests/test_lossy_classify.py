@@ -155,7 +155,7 @@ class TestClassify:
 class TestEnrichIndexRows:
     """Blocking tests for enrich_index_rows."""
 
-    @patch("src.jobs.builder.probe_many")
+    @patch("src.audio.inspector.probe_many")
     @patch("src.jobs.builder.compute_output_path")
     def test_no_lossy_check_skips_probe(
         self, mock_compute: object, mock_probe_many: object
@@ -178,13 +178,12 @@ class TestEnrichIndexRows:
             preset=MockPreset(),  # type: ignore[arg-type]
             lossy_action=LossyAction.LEAVE,
             no_lossy_check=True,
-            ffprobe_path="ffprobe",
             probe_workers=2,
         )
         mock_probe_many.assert_not_called()
         assert result == []
 
-    @patch("src.jobs.builder.probe_many")
+    @patch("src.audio.inspector.probe_many")
     @patch("src.jobs.builder.compute_output_path")
     def test_lossy_file_returned_in_result(
         self, mock_compute: object, mock_probe_many: object
@@ -208,13 +207,12 @@ class TestEnrichIndexRows:
             preset=MockPreset(),  # type: ignore[arg-type]
             lossy_action=LossyAction.LEAVE,
             no_lossy_check=False,
-            ffprobe_path="ffprobe",
             probe_workers=2,
         )
         assert result == [Path("D:/music/test.mp3")]
         assert row.job_type == "skip"
 
-    @patch("src.jobs.builder.probe_many")
+    @patch("src.audio.inspector.probe_many")
     @patch("src.jobs.builder.compute_output_path")
     def test_lossless_file_job_type_convert(
         self, mock_compute: object, mock_probe_many: object
@@ -238,7 +236,6 @@ class TestEnrichIndexRows:
             preset=MockPreset(),  # type: ignore[arg-type]
             lossy_action=LossyAction.LEAVE,
             no_lossy_check=False,
-            ffprobe_path="ffprobe",
             probe_workers=2,
         )
         assert result == []

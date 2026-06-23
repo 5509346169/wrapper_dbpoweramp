@@ -170,7 +170,6 @@ def _main() -> None:
             preset=preset,
             lossy_action=lossy_action,
             no_lossy_check=args.no_lossy_check,
-            ffprobe_path=settings.tools.ffprobe_path,
             probe_workers=settings.execution.probe_workers,
             progress=sink,
             index_builder=index_builder,

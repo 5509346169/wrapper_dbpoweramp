@@ -17,7 +17,7 @@ class PresetNotFoundError(Exception):
 
 
 class ProbeError(Exception):
-    """Raised when ffprobe fails to probe an audio file."""
+    """Raised when audio metadata extraction fails (mutagen)."""
 
     def __init__(self, file: str, stderr: str) -> None:
         self.file = file
