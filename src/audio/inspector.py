@@ -1,6 +1,6 @@
 """audio/inspector.py: Audio codec probing via ffprobe."""
 
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from src.exceptions import ProbeError
@@ -14,6 +14,8 @@ LOSSLESS_CODECS = {
 
 def probe_codec(file: Path, ffprobe_binary: str) -> str:
     """Returns ffprobe's codec_name for the first audio stream. Raises ProbeError on failure."""
+    import subprocess
+
     args = [
         ffprobe_binary,
         "-v", "error",
@@ -22,7 +24,6 @@ def probe_codec(file: Path, ffprobe_binary: str) -> str:
         "-of", "default=noprint_wrappers=1:nokey=1",
         str(file),
     ]
-    import subprocess
     result = subprocess.run(args, capture_output=True, text=True, check=False)
     stdout = result.stdout.strip()
     if result.returncode != 0 or not stdout:
@@ -36,8 +37,14 @@ def is_lossy(file: Path, ffprobe_binary: str) -> bool:
     return codec not in LOSSLESS_CODECS
 
 
-def probe_many(files: list[Path], ffprobe_binary: str, workers: int) -> dict[Path, bool]:
-    """Thread-pooled batch probe (I/O bound) — used for the pre-flight lossy-gate scan."""
+def probe_generator(
+    files: list[Path], ffprobe_binary: str, workers: int
+) -> tuple[Future, ...]:
+    """Kick off parallel ffprobe calls and return futures for ordered yielding.
+
+    Callers consume results by iterating over the returned futures using
+    ``as_completed``, yielding (file, is_lossy) tuples as each probe finishes.
+    """
     cache: dict[Path, bool] = {}
 
     def probe_one(file: Path) -> tuple[Path, bool]:
@@ -48,6 +55,19 @@ def probe_many(files: list[Path], ffprobe_binary: str, workers: int) -> dict[Pat
         return (file, result)
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
-        results = list(executor.map(probe_one, files))
+        futures = [executor.submit(probe_one, f) for f in files]
+    return tuple(futures)
 
+
+def probe_many(
+    files: list[Path], ffprobe_binary: str, workers: int
+) -> dict[Path, bool]:
+    """Thread-pooled batch probe (I/O bound) — used for the pre-flight lossy-gate scan.
+
+    This is the blocking convenience wrapper. For streaming results with live progress,
+    use :func:`probe_generator` instead.
+    """
+    results: list[tuple[Path, bool]] = []
+    for future in as_completed(probe_generator(files, ffprobe_binary, workers)):
+        results.append(future.result())
     return dict(results)

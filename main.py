@@ -16,12 +16,11 @@ from src.history.db import ConversionDB
 from src.index.builder import IndexBuilder
 from src.index.cleanup import cleanup_index
 from src.index.scanner import (
-    AUDIO_EXTENSIONS as _AUDIO_EXTS,
     IndexRow,
     _discover_audio_files,
     scan_with_progress,
 )
-from src.jobs.builder import build_jobs, discover_audio_files, enrich_index_rows
+from src.jobs.builder import enrich_index_rows_streaming
 from src.models.types import Backend, ConversionJob, LossyAction
 from src.pathing.resolver import validate_source_path
 from src.ui.progress_view import RichProgressSink
@@ -148,13 +147,23 @@ def _main() -> None:
             source_root = None
 
         # 8. Enrich index rows: lossy probe + output path + job type.
-        #    This mutates each row in place (fills is_lossy, dest_path, job_type).
+        #    Keep the progress bar alive — scanning has finished and probing is
+        #    the expensive step.  Rows are written to the index DB as each probe
+        #    result arrives, so the DB is a real-time snapshot rather than a
+        #    deferred write.
         lossy_action: LossyAction | None = None
         if args.lossy_action is not None:
             lossy_action = LossyAction(args.lossy_action)
 
-        lossy_files_found = enrich_index_rows(
-            rows=rows,
+        index_builder = None
+        if index_db_path is not None:
+            try:
+                index_builder = IndexBuilder(index_db_path)
+            except OSError as exc:
+                print(f"warning: could not open index DB {index_db_path}: {exc}", file=sys.stderr)
+
+        lossy_files_found = enrich_index_rows_streaming(
+            scan_rows=rows,
             input_root=input_root,
             source_root=source_root,
             output_root=args.output,
@@ -163,21 +172,24 @@ def _main() -> None:
             no_lossy_check=args.no_lossy_check,
             ffprobe_binary=settings.tools.ffprobe_binary,
             probe_workers=settings.execution.probe_workers,
+            progress=sink,
+            index_builder=index_builder,
         )
 
-        # 9. Persist the enriched index snapshot to SQLite.
-        #    The DB is the single source of truth from this point forward.
-        if index_db_path is not None:
-            try:
-                with IndexBuilder(index_db_path) as ib:
-                    ib.add_many(rows)
-                print(f"[cyan]Index:[/cyan] {index_db_path}")
-            except OSError as exc:
-                print(f"warning: could not write index DB {index_db_path}: {exc}", file=sys.stderr)
+        if index_builder is not None:
+            index_builder.commit()
+            print(f"[cyan]Index:[/cyan] {index_db_path}")
+            # Re-read the DB as the source of truth — all rows are already written
+            # by the streaming probe, so this is a fast snapshot of what landed.
+            index_builder.close()
+            db_rows = list(IndexBuilder(index_db_path).iter_rows())
+            source_rows: list[IndexRow] = db_rows
+            sink = RichProgressSink()
+        else:
+            # Index DB unavailable; use the in-memory enriched rows.
+            source_rows = rows
 
-        # 10. Build the ConversionJob list from the enriched rows (in memory).
-        #    The DB is the source of truth for the real execution path; we build
-        #    the list here so --dry-run and --list-lossy can also use it.
+        # 10. Build the ConversionJob list from the source of truth.
         def _row_to_job(row: IndexRow) -> ConversionJob:
             is_lossy_val = row.is_lossy
             if args.no_lossy_check:
@@ -202,7 +214,7 @@ def _main() -> None:
                 reason=reason,
             )
 
-        jobs = [_row_to_job(r) for r in rows]
+        jobs = [_row_to_job(r) for r in source_rows]
 
         # 11. Lossy gate
         if (
