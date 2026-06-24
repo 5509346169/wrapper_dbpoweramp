@@ -80,7 +80,7 @@ class ProgressSink(Protocol):
         ...
 
     def set_activity(self, activity: str) -> None:
-        """Set the current activity description (e.g., 'copying', 'converting')."""
+        """Set the current activity description (e.g., 'copying' or 'converting')."""
         ...
 
 
@@ -368,7 +368,7 @@ class RichProgressSink:
         self._live.update(self._make_renderable())
         self._live.refresh()
 
-    def _make_renderable(self) -> Columns:
+    def _make_renderable(self) -> Group:
         """Build the compact inline stack: bar row + up to LOG_LINES log lines."""
         renderer = self._renderer
         if renderer is None:
@@ -456,8 +456,18 @@ class RichProgressSink:
         self._renderer = None
 
     def set_activity(self, activity: str) -> None:
-        """Set the current activity description (e.g., 'copying', 'converting')."""
+        """Set the current activity description (e.g., 'copying' or 'converting')."""
         if self._renderer is None:
             return
         self._renderer.set_activity(activity)
         self._refresh()
+
+    def log_file(self, message: str) -> None:
+        """Append a file-level message to the log area."""
+        self.log(message)
+
+    def log_phase(self, name: str) -> None:
+        """Set the phase name and log a phase header."""
+        if self._renderer is not None:
+            self._renderer.set_phase_name(name)
+        self.log(f"[{name}]")

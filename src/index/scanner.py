@@ -73,6 +73,7 @@ def scan_with_progress(
     excludes: list[str],
     preset,
     progress: ProgressSink,
+    audio_files: list[Path] | None = None,
 ) -> tuple[list[IndexRow], dict[Path, str]]:
     """Walk ``input_path`` once, collecting file stats and sidecar candidates.
 
@@ -85,12 +86,16 @@ def scan_with_progress(
         excludes: Directory basenames to skip during the walk.
         preset: ``PresetConfig`` — used to determine which sidecar patterns to look for.
         progress: ``ProgressSink`` for live reporting.
+        audio_files: Optional pre-discovered list of audio files. If None, the function
+            will discover them internally (performing a fresh rglob walk). Passing the
+            list avoids a duplicate directory traversal.
 
     Returns:
         ``(rows, sidecar_map)`` where ``rows`` is a list of ``IndexRow`` and
         ``sidecar_map`` is a ``dict[Path, str]`` from source path to sidecar basenames.
     """
-    audio_files = _discover_audio_files(input_path, excludes)
+    if audio_files is None:
+        audio_files = _discover_audio_files(input_path, excludes)
     total = len(audio_files)
     progress.log(f"Scanning {total} file(s)...")
     rows: list[IndexRow] = []

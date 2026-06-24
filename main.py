@@ -93,6 +93,7 @@ def _build_index_only(
             excludes=args.exclude,
             preset=preset,
             progress=sink,
+            audio_files=audio_files,
         )
         sink.stop()
 
@@ -389,13 +390,19 @@ def _main() -> None:
         audio_files = _discover_audio_files(args.input, args.exclude)
         total_files = len(audio_files)
 
-        sink = RichProgressSink()
-        sink.start_phase("Scanning", total=total_files)
+        if args.verbose:
+            sink = VerboseProgressSink()
+            sink.log_phase("Scanning")
+            sink.log_file(f"Found {total_files} audio file(s)")
+        else:
+            sink = RichProgressSink()
+            sink.start_phase("Scanning", total=total_files)
         rows, sidecar_map = scan_with_progress(
             input_path=args.input,
             excludes=args.exclude,
             preset=preset,
             progress=sink,
+            audio_files=audio_files,
         )
         sink.stop()
 
