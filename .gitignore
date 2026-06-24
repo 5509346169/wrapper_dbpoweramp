@@ -44,3 +44,7 @@ Thumbs.db
 
 # Temporary runtime artifacts
 ./tmp/
+
+# Planning and design docs (staying local)
+plans/
+.cursor/

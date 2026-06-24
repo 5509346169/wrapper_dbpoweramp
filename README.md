@@ -1,17 +1,50 @@
 # dBpoweramp Wrapper
 
 A CLI tool that wraps **dBpoweramp CoreConverter.exe** (via Wine) and **native FFmpeg** for
-cross-platform audio format conversion on Linux. The dBpoweramp rewrite targets CachyOS Linux
-specifically — it calls the real dBpoweramp encoders through Wine, and also ships a fully native
-FFmpeg path for users who want zero Wine dependency.
+cross-platform audio format conversion. On Linux, it calls the real dBpoweramp encoders through
+Wine, and also provides a fully native FFmpeg path for users who want zero Wine dependency.
+On Windows, it runs natively using the real dBpoweramp CoreConverter.exe.
 
-See `plans/` for design documents and `01-config-schema.md` for the full preset/backend schema.
+See `docs/` for comprehensive documentation covering architecture, configuration, CLI, presets, backends, and more.
+
+---
+
+## Table of Contents
+
+- [Features](#features)
+- [Installation](#installation)
+  - [Linux](#linux)
+  - [Windows](#windows)
+  - [Python dependencies](#python-dependencies)
+- [Quick start](#quick-start)
+- [Available presets](#available-presets)
+- [CLI flags](#cli-flags)
+- [Lossy source files](#lossy-source-files)
+- [Resume / history](#resume--history)
+- [Sidecar files](#sidecar-files)
+- [File index](#file-index)
+- [Backend selection](#backend-selection)
+- [Known limitations](#known-limitations)
+- [Design docs](#design-docs)
+
+---
+
+## Features
+
+- **Multi-backend support**: FFmpeg (native), dBpoweramp (via Wine on Linux, native on Windows)
+- **Automatic backend detection**: On Windows, automatically uses real dBpoweramp when available
+- **Parallel conversion**: Threaded or multiprocess workers for batch operations
+- **Lossy source handling**: Detect, skip, copy, or transcode lossy audio sources
+- **Sidecar preservation**: Automatically copies lyrics and cover art
+- **Resume support**: Skips already-converted files, handles interruptions gracefully
+- **SQLite reliability**: WAL mode with busy timeout for safe concurrent database access
+- **Output verification**: Validates output files before marking conversions as successful
 
 ---
 
 ## Installation
 
-### Packages
+### Linux
 
 Install audio tools from the official CachyOS repos:
 
@@ -19,11 +52,25 @@ Install audio tools from the official CachyOS repos:
 sudo pacman -S ffmpeg wine python-pyyaml python-rich
 ```
 
-- `ffmpeg` — provides `ffmpeg` and `ffprobe`. For the `aac-vbr-high` native preset with FDK AAC,
-  the standard repo `ffmpeg` may omit `libfdk_aac`; use `ffmpeg-full` from the AUR if needed.
-- `wine` — provides `wine`, `winepath`, and the Wine runtime. **No `wine-mono` or `wine-gecko`
-  is needed** — this wrapper calls CoreConverter.exe as a CLI tool only, not as a .NET/WinForms app.
-- `python-pyyaml` and `python-rich` — Python dependencies.
+| Dependency | Purpose |
+|------------|---------|
+| `ffmpeg` | Provides `ffmpeg` and `ffprobe`. For `aac-vbr-high` with FDK AAC, use `ffmpeg-full` from AUR. |
+| `wine` | Provides `wine`, `winepath`, and Wine runtime. No `wine-mono` or `wine-gecko` needed. |
+| `python-pyyaml` | YAML configuration parsing |
+| `python-rich` | Terminal UI with colored output and progress bars |
+
+### Windows
+
+- **Python 3.10+** recommended
+- Install dBpoweramp Reference using the official Windows installer
+- Default path: `C:\Program Files\dBpoweramp\CoreConverter.exe`
+- Install Python dependencies:
+
+```sh
+pip install pyyaml rich
+```
+
+No Wine needed on Windows — paths are passed verbatim to `CoreConverter.exe`.
 
 ### Python dependencies
 
@@ -35,7 +82,7 @@ uv sync
 
 `requirements.txt` and `pyproject.toml` both declare only `pyyaml` and `rich`.
 
-### Wine prefix setup (for `wine_dbpoweramp` backend)
+### Wine prefix setup (Linux only)
 
 If you plan to use the `wine_dbpoweramp` backend, create a dedicated Wine prefix and install
 dBpoweramp inside it:
@@ -48,54 +95,53 @@ wineboot --init
 Then run the dBpoweramp installer inside the prefix:
 
 ```sh
-WINEPREFIX=~/.wine-dbpoweramp wine /path/to/dBpowerampReference食用.exe
+WINEPREFIX=~/.wine-dbpoweramp wine /path/to/dBpowerampReference.exe
 ```
 
-Note: the `qaac-cvbr-256` preset requires Apple's `CoreAudioToolbox.dll` from an iTunes install
-(under Wine, install inside the Wine prefix; under native Windows, install alongside dBpoweramp
-and ensure the QAAC encoder is registered). This is a known fragility — if the DLL is absent,
-the preset fails with a clear error from QAAC itself. This is not a bug in the wrapper.
+> **Note:** The `qaac-cvbr-256` preset requires Apple's `CoreAudioToolbox.dll` from an iTunes
+> install (install inside the Wine prefix on Linux; install alongside dBpoweramp on Windows).
+> If absent, QAAC fails with a clear error — this is not a wrapper bug.
 
 ---
 
 ## Quick start
 
-### Native FFmpeg (default backend)
+### Convert a folder (FFmpeg)
 
 ```sh
 python main.py -I ~/Music -O ~/Converted -p flac-lossless
 ```
 
-### Wine dBpoweramp backend
+### Convert a folder (dBpoweramp via Wine)
 
 ```sh
 python main.py -I ~/Music -O ~/Converted -p qaac-cvbr-256 --backend wine_dbpoweramp
 ```
 
-### Other common presets
+### More examples
 
 ```sh
-# MP3 V0 via native ffmpeg
+# MP3 V0 via FFmpeg
 python main.py -I ~/Music -O ~/Converted -p mp3-v0-vbr
 
-# Opus 128 via Wine dBpoweramp
+# Opus 128 via dBpoweramp
 python main.py -I ~/Music -O ~/Converted -p opus-128 --backend wine_dbpoweramp
 
-# AAC VBR via native ffmpeg (requires libfdk_aac in ffmpeg)
+# AAC VBR via FFmpeg (requires libfdk_aac)
 python main.py -I ~/Music -O ~/Converted -p aac-vbr-high
-```
 
-### Path math with `--source-path`
-
-Convert a single sub-folder while preserving the full library tree in the output:
-
-```sh
+# Preserve folder structure with --source-path
 python main.py -I ~/Music/Artist/Album -O ~/Converted \
     --source-path ~/Music \
     -p flac-lossless
-```
+# Output: ~/Converted/Artist/Album/...
 
-Output lands at `~/Converted/Artist/Album/` instead of directly in `~/Converted/`.
+# Dry run — see what would be converted
+python main.py -I ~/Music -O ~/Converted -p flac-lossless --dry-run
+
+# Verbose output
+python main.py -I ~/Music -O ~/Converted -p flac-lossless -v
+```
 
 ---
 
@@ -104,67 +150,13 @@ Output lands at `~/Converted/Artist/Album/` instead of directly in `~/Converted/
 | Preset | Output | Backends |
 |--------|--------|----------|
 | `flac-lossless` | FLAC (compression level 5) | native_ffmpeg, native_dbpoweramp, wine_dbpoweramp |
-| `mp3-v0-vbr` | MP3 V0 | native_ffmpeg, native_dbpoweramp, wine_dbpoweramp |
-| `mp3-320-cbr` | MP3 320 kbps | native_ffmpeg, native_dbpoweramp, wine_dbpoweramp |
+| `mp3-v0-vbr` | MP3 V0 VBR | native_ffmpeg, native_dbpoweramp, wine_dbpoweramp |
+| `mp3-320-cbr` | MP3 320 kbps CBR | native_ffmpeg, native_dbpoweramp, wine_dbpoweramp |
 | `aac-vbr-high` | AAC VBR high quality | native_ffmpeg, native_dbpoweramp, wine_dbpoweramp |
-| `qaac-cvbr-256` | AAC 256 kbps via QAAC | wine_dbpoweramp, native_dbpoweramp (requires manual QAAC install) |
+| `qaac-cvbr-256` | AAC 256 kbps via QAAC | wine_dbpoweramp, native_dbpoweramp |
 | `opus-128` | Opus 128 kbps | native_ffmpeg, native_dbpoweramp, wine_dbpoweramp |
 
 `native_ffmpeg` is the default backend (set in `settings.yaml`). Override with `--backend`.
-
----
-
-## Windows Support
-
-This wrapper runs natively on Windows without Wine. On `sys.platform == "win32"`, automatic
-backend detection (`backend.auto_detect: true` in `settings.yaml`) picks the best backend
-for each preset, preferring `native_dbpoweramp` (the real dBpoweramp CoreConverter.exe) over
-`native_ffmpeg` for every preset that supports it (all except `qaac-cvbr-256`, which requires
-the Apple-only `CoreAudioToolbox.dll` and stays on `wine_dbpoweramp`).
-
-### Configuration
-
-In `settings.yaml`, the `backend:` block declares the native dBpoweramp install location and
-the auto-detect toggle:
-
-```yaml
-backend:
-  default: "native_ffmpeg"
-  auto_detect: true
-  native_dbpoweramp:
-    coreconverter_path: "C:\\Program Files\\dBpoweramp\\CoreConverter.exe"
-```
-
-Adjust `coreconverter_path` to wherever dBpoweramp is installed on the machine.
-
-### Resolution order
-
-For each run, the wrapper picks the backend as follows:
-
-1. If `--backend NAME` is given on the command line, that wins outright.
-2. Otherwise, if `auto_detect` is enabled and the platform is Windows, and the selected
-   preset has a `native_dbpoweramp` block, use `native_dbpoweramp`.
-3. Otherwise, fall back to `backend.default` from `settings.yaml`.
-
-`--auto-detect-backend` and `--no-auto-detect-backend` flip the auto-detect toggle for a
-single run without editing `settings.yaml`. The two flags are mutually exclusive; default
-(neither given) defers to `settings.yaml`.
-
-### Backends on Windows
-
-- `native_dbpoweramp` — invokes `CoreConverter.exe` directly, no Wine layer. Default for
-  all presets except `qaac-cvbr-256`.
-- `native_ffmpeg` — falls back to native ffmpeg for presets where dBpoweramp is not desired.
-- `wine_dbpoweramp` — still works on Windows if Wine is installed, but rarely useful.
-- `qaac-cvbr-256` does **not** support `native_dbpoweramp` (QAAC is Apple-only).
-
-### Windows installation tips
-
-- Python 3.10+ is recommended; install `pyyaml` and `rich` via pip.
-- Install dBpoweramp Reference using the official Windows installer; the path defaults to
-  `C:\Program Files\dBpoweramp\CoreConverter.exe`.
-- No Wine, no `WINEPREFIX`, no path translation — paths are passed verbatim to
-  `CoreConverter.exe`.
 
 ---
 
@@ -174,15 +166,15 @@ single run without editing `settings.yaml`. The two flags are mutually exclusive
 |------|----------|-------------|
 | `-I, --input PATH` | yes | File or directory to convert |
 | `-O, --output PATH` | yes | Output root directory |
-| `-p, --preset NAME` | yes | Preset name from `presets.yaml` (e.g. `flac-lossless`, `mp3-320-cbr`) |
+| `-p, --preset NAME` | yes | Preset name from `presets.yaml` |
 | `--source-path PATH` | no | Root for relative-path math; `--input` must be inside it |
-| `--backend NAME` | no | `wine_dbpoweramp`, `native_dbpoweramp`, or `native_ffmpeg`; overrides `settings.yaml` default |
-| `--auto-detect-backend` | no | Force auto-detection for this run (overrides `--backend` if both are compatible) |
+| `--backend NAME` | no | `wine_dbpoweramp`, `native_dbpoweramp`, or `native_ffmpeg` |
+| `--auto-detect-backend` | no | Force auto-detection for this run |
 | `--no-auto-detect-backend` | no | Force-disable auto-detection for this run |
-| `--lossy-action ACTION` | conditional | `leave` (skip), `copy` (pass through), `convert` (transcode). **Required if any lossy source files are found.** |
+| `--lossy-action ACTION` | conditional | `leave`, `copy`, or `convert`. **Required if lossy files found.** |
 | `--no-lossy-check` | no | Disable ffprobe lossy detection entirely |
-| `-w, --workers N` | no | Override thread/process pool size (default from `settings.yaml`) |
-| `--worker-model MODEL` | no | `thread` or `process`; overrides `settings.yaml` |
+| `-w, --workers N` | no | Thread/process pool size (default from `settings.yaml`) |
+| `--worker-model MODEL` | no | `thread` or `process` (default from `settings.yaml`) |
 | `-v, --verbose` | no | Live verbose conversion stream |
 | `--exclude DIR` | no | Folder names to skip; can be repeated |
 | `--db PATH` | no | Override history database path |
@@ -194,20 +186,24 @@ single run without editing `settings.yaml`. The two flags are mutually exclusive
 
 ## Lossy source files
 
-The lossy-action gate is a hard error. If any lossy source files are detected (verified by
-`ffprobe` codec detection — not by file extension) and `--lossy-action` is not given, the run
-aborts immediately before touching the output directory or history database, printing the
-offending file paths and the exact flag needed to proceed.
+The lossy-action gate is a **hard error**. If any lossy source files are detected (via `ffprobe`
+codec detection — not by file extension) and `--lossy-action` is not given, the run aborts
+immediately before touching the output directory or history database.
 
-- `--lossy-action leave` — skip lossy files entirely; they appear as `SKIPPED` in the summary.
-- `--lossy-action copy` — copy lossy files as-is to the output tree (no transcoding).
-- `--lossy-action convert` — transcode lossy sources to the target format.
+### Available actions
 
-`--no-lossy-check` disables the probe entirely; use it when you are certain the source is
-all-lossless and want to skip the pre-flight scan on very large libraries.
+| Action | Description |
+|--------|-------------|
+| `leave` | Skip lossy files; they appear as `SKIPPED` in the summary |
+| `copy` | Copy lossy files as-is to the output tree (no transcoding) |
+| `convert` | Transcode lossy sources to the target format |
 
-`--list-lossy` scans and prints lossy files found, then exits — useful for deciding which
-policy to use before running the full batch.
+### Related flags
+
+- `--no-lossy-check`: Disable the probe entirely. Use when your source is all-lossless and
+  you want to skip the pre-flight scan on very large libraries.
+- `--list-lossy`: Scan and print lossy files found, then exit. Useful for deciding which
+  policy to use before running the full batch.
 
 ---
 
@@ -215,8 +211,10 @@ policy to use before running the full batch.
 
 Successful conversions are logged to `conversion_history.db` (SQLite). Re-running against the
 same input/output paths skips already-completed conversions. Use `--force` to reconvert
-everything. The history table tracks `job_type` (`convert` / `copy`) — a file previously
-copied as-is under a `copy` policy is not skipped if you re-run with a `convert` policy.
+everything.
+
+The history table tracks `job_type` (`convert` / `copy`) — a file previously copied as-is
+under a `copy` policy is not skipped if you re-run with a `convert` policy.
 
 ### Reliability features
 
@@ -246,26 +244,23 @@ Every run builds a temporary snapshot of the discovered files in `tmp/index.db` 
 database) before the lossy gate runs. The database is the **single source of truth** for the
 conversion step: after the scan, rows are enriched with `dest_path`, `job_type`, and
 `is_lossy`, written to SQLite, and then read back to build the `ConversionJob` list that
-feeds the converter. This means:
+feeds the converter.
 
+This means:
 - The index is not merely a post-mortem artifact — it is the working set.
 - `is_lossy` (ffprobe's codec classification) is persisted per row so a future resume
   mechanism can skip the re-probe pass for already-probed files.
 
-Each row contains the source path, the planned destination path, the resolved `job_type`
-(`convert` / `copy` / `skip`), the file size, the sidecar basenames detected alongside
-the source, the source mtime, and the lossy probe result.
-
-### When is the index kept?
+### Index cleanup
 
 | Outcome | `tmp/index.db` |
 |---------|----------------|
-| All jobs succeeded, no Ctrl+C | **Deleted** automatically |
-| Any job failed (or exception) | **Preserved**, with a hint printed to stderr |
-| Run interrupted with Ctrl+C / SIGTERM | **Preserved**, with a hint printed to stderr |
+| All jobs succeeded, no interrupt | **Deleted** automatically |
+| Any job failed or exception | **Preserved**, with a hint printed |
+| Interrupted (Ctrl+C / SIGTERM) | **Preserved**, with a hint printed |
 
 The cleanup decision is made in the `finally:` block of `main._main` so it runs on every
-exit path (return, `sys.exit`, exception, signal).
+exit path.
 
 ### Inspecting a preserved index
 
@@ -273,7 +268,7 @@ exit path (return, `sys.exit`, exception, signal).
 sqlite3 tmp/index.db "SELECT source_path, dest_path, job_type, is_lossy, file_size FROM index_entries LIMIT 10;"
 ```
 
-The `index_entries` table schema:
+### Schema
 
 ```sql
 CREATE TABLE index_entries (
@@ -289,40 +284,77 @@ CREATE TABLE index_entries (
 )
 ```
 
-`is_lossy` is `1` for lossy sources (e.g. MP3, AAC), `0` for lossless (e.g. FLAC),
-and `NULL` when `--no-lossy-check` was used.
+`is_lossy` is `1` for lossy sources (MP3, AAC), `0` for lossless (FLAC), and `NULL` when
+`--no-lossy-check` was used.
 
-The `tmp/` directory is gitignored, so preserved index files never accidentally enter a
-commit. To clear a stale index manually, just delete `tmp/index.db`.
+The `tmp/` directory is gitignored. To clear a stale index manually, delete `tmp/index.db`.
+
+---
+
+## Backend selection
+
+### Resolution order
+
+For each run, the wrapper picks the backend as follows:
+
+1. If `--backend NAME` is given on the command line, that wins outright.
+2. Otherwise, if `auto_detect` is enabled and the platform is Windows, and the selected
+   preset has a `native_dbpoweramp` block, use `native_dbpoweramp`.
+3. Otherwise, fall back to `backend.default` from `settings.yaml`.
+
+### Available backends
+
+| Backend | Linux | Windows | Description |
+|--------|-------|---------|-------------|
+| `native_ffmpeg` | ✓ | ✓ | FFmpeg encoder, no external dependencies |
+| `native_dbpoweramp` | ✗ | ✓ | Real dBpoweramp CoreConverter.exe |
+| `wine_dbpoweramp` | ✓ | ✓ | dBpoweramp via Wine (Linux only) |
+
+> **Note:** `qaac-cvbr-256` does **not** support `native_dbpoweramp` (QAAC is Apple-only).
+> It uses `wine_dbpoweramp` on Linux and `native_dbpoweramp` on Windows (if QAAC is
+> registered with dBpoweramp).
+
+### Configuration
+
+In `settings.yaml`, the `backend:` block:
+
+```yaml
+backend:
+  default: "native_ffmpeg"
+  auto_detect: true
+  native_dbpoweramp:
+    coreconverter_path: "C:\\Program Files\\dBpoweramp\\CoreConverter.exe"
+```
 
 ---
 
 ## Known limitations
 
-- **QAAC requires CoreAudioToolbox.dll.** The `qaac-cvbr-256` preset works only with the
-  Wine dBpoweramp backend and depends on Apple's `CoreAudioToolbox.dll` from an iTunes install
-  inside `~/.wine-dbpoweramp`. If absent, QAAC fails with a readable error — this is expected,
-  not a wrapper bug.
+- **QAAC requires CoreAudioToolbox.dll.** The `qaac-cvbr-256` preset depends on Apple's
+  DLL from an iTunes install. If absent, QAAC fails with a readable error.
 
-- **libfdk_aac may be absent.** CachyOS's repo `ffmpeg` often omits `libfdk_aac`. If you use
-  the `aac-vbr-high` native preset, the wrapper checks `ffmpeg -encoders` before running and
-  fails with an actionable message. Install `ffmpeg-full` from the AUR or rebuild `ffmpeg` with
-  FDK AAC enabled.
+- **libfdk_aac may be absent.** Repo `ffmpeg` often omits `libfdk_aac`. The wrapper checks
+  `ffmpeg -encoders` before running `aac-vbr-high` and fails with an actionable message.
+  Install `ffmpeg-full` from AUR or rebuild with FDK AAC enabled.
 
-- **winepath dependency.** Path translation for `wine_dbpoweramp` requires the `winepath`
-  utility, which ships with `wine`. The wrapper validates its presence at startup when that
-  backend is selected.
+- **winepath dependency (Linux).** Path translation for `wine_dbpoweramp` requires
+  `winepath`, which ships with `wine`. The wrapper validates its presence at startup.
 
 - **Double-probing cost.** Each source file is probed once with `ffprobe` during the
   pre-flight lossy-classification scan. For large libraries this is the dominant pre-flight
-  cost; the probe pass uses a thread pool but cannot be parallelized with the conversion pass.
+  cost.
 
 ---
 
-## Design docs
+## Documentation
 
-- `plans/plans1/00-overview-and-architecture.md` — architecture overview, design principles, known risks
-- `plans/plans1/01-config-schema.md` — settings.yaml and presets.yaml schema, full CLI flag table
-- `plans/plans1/02-module-specifications.md` — per-module signatures and contracts
-- `plans/plans1/03-implementation-roadmap.md` — phased implementation notes
-- `plans/plans1/04-cursor-agent-tasks.md` — task list and AGENTS.md rules
+For comprehensive documentation, see the `docs/` folder:
+
+- [docs/index.md](docs/index.md) — Documentation index with links to all topics
+- [docs/architecture.md](docs/architecture.md) — System architecture and component overview
+- [docs/configuration.md](docs/configuration.md) — Complete settings.yaml reference
+- [docs/cli.md](docs/cli.md) — Complete CLI reference
+- [docs/presets.md](docs/presets.md) — Preset definitions and parameters
+- [docs/backends.md](docs/backends.md) — Backend implementation details
+- [docs/modules.md](docs/modules.md) — Module reference
+- [docs/workflow.md](docs/workflow.md) — How a conversion run works
