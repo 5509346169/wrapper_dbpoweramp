@@ -218,6 +218,17 @@ same input/output paths skips already-completed conversions. Use `--force` to re
 everything. The history table tracks `job_type` (`convert` / `copy`) — a file previously
 copied as-is under a `copy` policy is not skipped if you re-run with a `convert` policy.
 
+### Reliability features
+
+The wrapper includes safeguards to ensure conversions produce valid output:
+
+- **WAL mode**: SQLite uses Write-Ahead Logging for safe concurrent access from multiple
+  worker threads, with a 5-second busy timeout to handle contention gracefully.
+- **Output verification**: After every conversion or copy, the wrapper verifies the output
+  file exists and has non-zero size before marking the job as SUCCESS. If verification
+  fails, the job is logged as FAILED with an error message — even if the external tool
+  reported exit code 0.
+
 ---
 
 ## Sidecar files

@@ -5,8 +5,12 @@ __pycache__/
 
 # SQLite databases (history DB + any --db override)
 *.db
+*.db-wal
+*.db-shm
 *.sqlite
 *.sqlite3
+*.sqlite-wal
+*.sqlite-shm
 
 # Common output directory names (-O / --output)
 # Remove/comment these if you use output dirs that match these names
