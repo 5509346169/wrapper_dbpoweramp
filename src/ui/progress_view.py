@@ -84,6 +84,51 @@ class ProgressSink(Protocol):
         ...
 
 
+class VerboseProgressSink:
+    """
+    A ProgressSink that prints file-level details to stdout for verbose mode.
+
+    Used during --build-index when -v/--verbose is enabled.
+    """
+
+    def start_phase(self, name: str, total: int) -> None:
+        pass
+
+    def advance(self, amount: int = 1) -> None:
+        pass
+
+    def start_subtask(self, name: str) -> SubtaskID:
+        return SubtaskID(-1)
+
+    def finish_subtask(self, subtask_id: SubtaskID) -> None:
+        pass
+
+    def log(self, message: str) -> None:
+        pass
+
+    def stop(self) -> None:
+        pass
+
+    def stop_phase(self) -> None:
+        pass
+
+    def set_activity(self, activity: str) -> None:
+        pass
+
+    def log_file(self, message: str) -> None:
+        """Print verbose file-level information to stdout."""
+        print(message)
+
+    def log_phase(self, name: str) -> None:
+        """Print phase header to stdout."""
+        print(f"[{name}]")
+
+    def log_result(self, filename: str, job_type: str, is_lossy: bool | None = None) -> None:
+        """Print file processing result to stdout."""
+        lossy_marker = " [LOSSY]" if is_lossy else ""
+        print(f"  {filename} -> {job_type}{lossy_marker}")
+
+
 class NullProgressSink:
     """
     A no-op ProgressSink for verbose mode where output goes directly to stdout.

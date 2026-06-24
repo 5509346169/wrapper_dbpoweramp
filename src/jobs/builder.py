@@ -108,6 +108,8 @@ def enrich_index_rows_streaming(
             )
             if index_builder is not None:
                 index_builder.add(row)
+            if hasattr(progress, "log_file"):
+                progress.log_file(f"  {Path(row.source_path).name} -> convert")
             progress.advance()
     else:
         # Tier 1 + 2 synchronously on the main thread (no I/O).
@@ -127,13 +129,18 @@ def enrich_index_rows_streaming(
                     index_builder.add(row)
                 if result:
                     lossy_files_found.append(f)
+                if hasattr(progress, "log_file"):
+                    progress.log_file(f"  {f.name} -> {row.job_type} {'[LOSSY]' if result else ''}")
             else:
                 ambiguous_files.append(f)
             progress.advance()
 
         # Tier 3: mutagen only for ambiguous files.
         if ambiguous_files:
-            progress.log(f"Probing {len(ambiguous_files)} ambiguous files with mutagen ({probe_workers} workers)...")
+            if hasattr(progress, "log_phase"):
+                progress.log_phase("Probing (mutagen)")
+            else:
+                progress.log(f"Probing {len(ambiguous_files)} ambiguous files with mutagen ({probe_workers} workers)...")
             _LOG_INTERVAL = 10
             _tier3_done = 0
 
@@ -162,13 +169,19 @@ def enrich_index_rows_streaming(
                         index_builder.add(row)
                     if is_lossy_val:
                         lossy_files_found.append(infile)
+                    if hasattr(progress, "log_file"):
+                        progress.log_file(f"  {infile.name} -> {row.job_type} {'[LOSSY]' if is_lossy_val else ''}")
                     progress.advance()
                     _tier3_done += 1
                     if _tier3_done % _LOG_INTERVAL == 0:
                         total_done = total - len(ambiguous_files) + _tier3_done
-                        progress.log(f"Probing {total_done}/{total} ({total_done * 100 // total}%)...")
+                        if not hasattr(progress, "log_file"):
+                            progress.log(f"Probing {total_done}/{total} ({total_done * 100 // total}%)...")
 
-            progress.log(f"Probing done. {len(lossy_files_found)} lossy file(s) found.")
+            if not hasattr(progress, "log_file"):
+                progress.log(f"Probing done. {len(lossy_files_found)} lossy file(s) found.")
+            elif len(lossy_files_found) > 0:
+                progress.log_file(f"  Total lossy files: {len(lossy_files_found)}")
 
     progress.stop()
     return lossy_files_found

@@ -22,7 +22,7 @@ from src.index.scanner import (
 from src.jobs.builder import enrich_index_rows_streaming
 from src.models.types import Backend, ConversionJob, LossyAction
 from src.pathing.resolver import validate_source_path
-from src.ui.progress_view import NullProgressSink, RichProgressSink
+from src.ui.progress_view import NullProgressSink, RichProgressSink, VerboseProgressSink
 
 # Module-level state used by the SIGINT/SIGTERM handlers below.
 _run_interrupted: bool = False
@@ -57,15 +57,20 @@ def _build_index_only(
     preset,
     backend,
     backend_name: Backend,
+    verbose: bool = False,
 ) -> None:
     """
     Build and save an index database without performing any conversions.
 
     This mode scans the input directory, probes audio files for lossy detection,
     and writes all index rows to the user-specified database path before exiting.
+
+    Args:
+        verbose: If True, print per-file details to stdout during scanning and probing.
     """
     from src.index.scanner import _discover_audio_files, scan_with_progress
     from src.jobs.builder import enrich_index_rows_streaming
+    from src.ui.progress_view import VerboseProgressSink
 
     # Install signal handlers
     old_sigint = signal.signal(signal.SIGINT, _signal_handler)
@@ -76,8 +81,13 @@ def _build_index_only(
         audio_files = _discover_audio_files(args.input, args.exclude)
         total_files = len(audio_files)
 
-        sink = RichProgressSink()
-        sink.start_phase("Scanning", total=total_files)
+        if verbose:
+            sink = VerboseProgressSink()
+            sink.log_phase("Scanning")
+            sink.log_file(f"Found {total_files} audio file(s)")
+        else:
+            sink = RichProgressSink()
+            sink.start_phase("Scanning", total=total_files)
         rows, _ = scan_with_progress(
             input_path=args.input,
             excludes=args.exclude,
@@ -101,8 +111,12 @@ def _build_index_only(
         source_root = args.source_path if args.source_path is not None else None
 
         # Build the index to user-specified path
-        sink = RichProgressSink()
-        sink.start_phase("Probing", total=len(rows))
+        if verbose:
+            sink = VerboseProgressSink()
+            sink.log_phase("Probing")
+        else:
+            sink = RichProgressSink()
+            sink.start_phase("Probing", total=len(rows))
 
         lossy_action: LossyAction | None = None
         if args.lossy_action is not None:
@@ -336,7 +350,7 @@ def _main() -> None:
 
     # 3b. Handle --build-index mode (build index and exit)
     if args.build_index is not None:
-        _build_index_only(args, settings, preset, backend, backend_name)
+        _build_index_only(args, settings, preset, backend, backend_name, verbose=args.verbose)
         return
 
     # 3c. Handle --index mode (use existing index and run conversions)

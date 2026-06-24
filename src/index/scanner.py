@@ -113,6 +113,19 @@ def scan_with_progress(
                 mtime=stat.st_mtime,
             )
         )
+        if hasattr(progress, "log_file"):
+            progress.log_file(f"  {infile.name} ({_format_bytes(stat.st_size)})")
         progress.advance()
 
     return rows, sidecar_map
+
+
+def _format_bytes(num_bytes: int) -> str:
+    """Format byte count as human-readable string."""
+    if num_bytes >= 1 << 30:
+        return f"{num_bytes / (1 << 30):.2f} GiB"
+    if num_bytes >= 1 << 20:
+        return f"{num_bytes / (1 << 20):.2f} MiB"
+    if num_bytes >= 1 << 10:
+        return f"{num_bytes / (1 << 10):.2f} KiB"
+    return f"{num_bytes} B"
