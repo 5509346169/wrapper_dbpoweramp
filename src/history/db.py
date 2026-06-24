@@ -23,6 +23,10 @@ class ConversionDB:
         """
         self.db_path = db_path
         self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
+        # Enable WAL mode for better concurrent write performance
+        self._conn.execute("PRAGMA journal_mode=WAL")
+        # Wait up to 5 seconds for locks instead of failing immediately
+        self._conn.execute("PRAGMA busy_timeout=5000")
         self._lock = threading.RLock()
         with self._lock:
             self._conn.execute(

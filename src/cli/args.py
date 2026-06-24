@@ -140,6 +140,18 @@ def parse_args(argv: list[str] | None = None) -> "Namespace":
         action="store_true",
         help="Scan and print lossy files found, then exit",
     )
+    parser.add_argument(
+        "--build-index",
+        type=Path,
+        metavar="PATH",
+        help="Build and save index database without converting, then exit",
+    )
+    parser.add_argument(
+        "--index",
+        type=Path,
+        metavar="PATH",
+        help="Use pre-built index database as input (skips filesystem scan/probe)",
+    )
 
     return parser.parse_args(argv)
 
@@ -186,3 +198,41 @@ def validate_args(args: "Namespace") -> None:
             file=sys.stderr,
         )
         sys.exit(1)
+
+    # Rule 4: --index and --build-index are mutually exclusive with each other
+    if args.index is not None and args.build_index is not None:
+        print(
+            "error: --index and --build-index are mutually exclusive",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    # Rule 5: --index and --build-index are mutually exclusive with --dry-run, --list-lossy
+    if (args.index is not None or args.build_index is not None) and (
+        args.dry_run or args.list_lossy
+    ):
+        mode = "--index" if args.index else "--build-index"
+        inspection = "--dry-run" if args.dry_run else "--list-lossy"
+        print(
+            f"error: {mode} is incompatible with {inspection}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    # Rule 6: --index requires an existing file
+    if args.index is not None and not args.index.exists():
+        print(
+            f"error: --index file does not exist: {args.index}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    # Rule 7: --build-index parent directory must exist and be writable
+    if args.build_index is not None:
+        parent = args.build_index.parent
+        if not parent.exists():
+            print(
+                f"error: --build-index parent directory does not exist: {parent}",
+                file=sys.stderr,
+            )
+            sys.exit(1)

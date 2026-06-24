@@ -7,6 +7,7 @@ from concurrent.futures import Future, ProcessPoolExecutor, ThreadPoolExecutor, 
 from enum import Enum
 from pathlib import Path
 from queue import Empty, Queue
+from threading import Event, Thread
 from typing import Callable, Optional
 
 from src.backends.base import ConversionBackend
@@ -22,6 +23,7 @@ class JobEventKind(str, Enum):
     STARTED = "started"
     FINISHED = "finished"
     LOG = "log"
+    ACTIVITY = "activity"
 
 
 def _make_event_queue(worker_model: str) -> Queue:
@@ -46,6 +48,23 @@ def _build_stream_callback(events: Queue) -> Optional[Callable[[str], None]]:
 def _push_log_event(events: Queue, line: str) -> None:
     """Module-level picklable sink used by workers to enqueue verbose lines."""
     events.put((JobEventKind.LOG, line))
+
+
+def _verify_output_file(job: ConversionJob) -> tuple[bool, str | None]:
+    """
+    Verify the output file exists and has a reasonable size.
+
+    Returns:
+        (is_valid, error_message) - is_valid is True if file exists and has content.
+    """
+    if not job.outfile.exists():
+        return False, f"Output file not found: {job.outfile}"
+
+    size = job.outfile.stat().st_size
+    if size == 0:
+        return False, f"Output file is empty: {job.outfile}"
+
+    return True, None
 
 
 def run_job(
@@ -77,7 +96,9 @@ def run_job(
 
     db = ConversionDB(Path(db_path))
 
+    # Send activity event to update UI
     if events is not None:
+        events.put((JobEventKind.ACTIVITY, job.job_type))
         events.put((JobEventKind.STARTED, infile_name))
 
     try:
@@ -94,17 +115,23 @@ def run_job(
                 status = "FAILED"
                 error_msg = str(e)
             else:
-                copy_lyrics(job.infile, job.outfile, job.preset.lyrics)
-                copy_covers(job.infile, job.outfile, job.preset.covers)
-                db.log_conversion(
-                    source=str(job.infile),
-                    dest=str(job.outfile),
-                    job_type=job.job_type,
-                    command=None,
-                    status="SUCCESS",
-                )
-                status = "SUCCESS"
-                error_msg = None
+                # Verify output file before marking as success
+                is_valid, verify_error = _verify_output_file(job)
+                if not is_valid:
+                    status = "FAILED"
+                    error_msg = verify_error
+                else:
+                    copy_lyrics(job.infile, job.outfile, job.preset.lyrics)
+                    copy_covers(job.infile, job.outfile, job.preset.covers)
+                    db.log_conversion(
+                        source=str(job.infile),
+                        dest=str(job.outfile),
+                        job_type=job.job_type,
+                        command=None,
+                        status="SUCCESS",
+                    )
+                    status = "SUCCESS"
+                    error_msg = None
 
         elif job.job_type == "convert":
             dest_exists = job.outfile.exists()
@@ -120,17 +147,23 @@ def run_job(
             result = backend.run(job, stream_callback)
 
             if result.status == "SUCCESS":
-                copy_lyrics(job.infile, job.outfile, job.preset.lyrics)
-                copy_covers(job.infile, job.outfile, job.preset.covers)
-                db.log_conversion(
-                    source=str(job.infile),
-                    dest=str(job.outfile),
-                    job_type=job.job_type,
-                    command=None,
-                    status=result.status,
-                    error_msg=result.error_msg,
-                    stdout=result.stdout,
-                )
+                # Verify output file before marking as success
+                is_valid, verify_error = _verify_output_file(job)
+                if not is_valid:
+                    result.status = "FAILED"
+                    result.error_msg = verify_error
+                else:
+                    copy_lyrics(job.infile, job.outfile, job.preset.lyrics)
+                    copy_covers(job.infile, job.outfile, job.preset.covers)
+                    db.log_conversion(
+                        source=str(job.infile),
+                        dest=str(job.outfile),
+                        job_type=job.job_type,
+                        command=None,
+                        status=result.status,
+                        error_msg=result.error_msg,
+                        stdout=result.stdout,
+                    )
 
             status = result.status
             error_msg = result.error_msg
@@ -145,6 +178,21 @@ def run_job(
             events.put((JobEventKind.FINISHED, infile_name))
 
     return status, infile_name, error_msg
+
+
+def _run_event_drain_thread(
+    events: Queue,
+    progress: ProgressSink,
+    job_tasks: dict[str, SubtaskID],
+    stop_event: Event,
+) -> None:
+    """
+    Background thread that continuously drains the event queue and updates the UI.
+    Runs until stop_event is set.
+    """
+    while not stop_event.is_set():
+        _drain_events_into_ui(events, progress, job_tasks)
+        stop_event.wait(timeout=0.1)  # Poll every 100ms
 
 
 def run_all(
@@ -193,56 +241,88 @@ def run_all(
 
     futures: list[Future] = []
 
-    with ExecutorCls(max_workers=workers) as executor:
-        futures = [
-            executor.submit(
-                run_job,
-                job,
-                backend,
-                str(db.db_path),
-                force,
-                stream_cb,
-                events,
-            )
-            for job in jobs
-        ]
+    # Track in-flight jobs for proper subtask bar management
+    job_tasks: dict[str, SubtaskID] = {}
 
-        if workers == 1:
-            for future in as_completed(futures):
-                _drain_events_into_ui(events, progress)
-                status, infile_name, error_msg = future.result()
+    # Start background thread to continuously drain events for real-time UI updates
+    stop_drain = Event()
+    drain_thread = Thread(
+        target=_run_event_drain_thread,
+        args=(events, progress, job_tasks, stop_drain),
+        daemon=True,
+    )
+    drain_thread.start()
 
-                if status == "SUCCESS":
-                    summary["success"] += 1
-                elif status == "SKIPPED":
-                    summary["skipped"] += 1
-                else:
-                    summary["failed"] += 1
+    try:
+        with ExecutorCls(max_workers=workers) as executor:
+            futures = [
+                executor.submit(
+                    run_job,
+                    job,
+                    backend,
+                    str(db.db_path),
+                    force,
+                    stream_cb,
+                    events,
+                )
+                for job in jobs
+            ]
 
-                progress.advance()
+            if workers == 1:
+                for future in as_completed(futures):
+                    _drain_events_into_ui(events, progress, job_tasks)
+                    status, infile_name, error_msg = future.result()
+
+                    if status == "SUCCESS":
+                        summary["success"] += 1
+                    elif status == "SKIPPED":
+                        summary["skipped"] += 1
+                    else:
+                        summary["failed"] += 1
+                    # Note: advance() is already called by drain when FINISHED event is processed
+    finally:
+        # Stop the drain thread
+        stop_drain.set()
+        drain_thread.join(timeout=1.0)
+        # Final drain to capture any remaining events
+        _drain_events_into_ui(events, progress, job_tasks)
 
     return summary, futures, events
 
 
-def _drain_events_into_ui(events: Queue, progress: ProgressSink) -> dict[str, SubtaskID]:
+def _drain_events_into_ui(
+    events: Queue,
+    progress: ProgressSink,
+    job_tasks: dict[str, SubtaskID],
+) -> None:
     """
     Drain queued (JobEventKind, payload) tuples from workers and apply UI updates
     on the calling thread. Per-job bars are added on STARTED and removed on FINISHED.
-    Returns a dict mapping infile_name to SubtaskID for active in-flight jobs.
+    The job_tasks dict is updated in-place to track active in-flight jobs.
+
+    STARTED events are only processed if the job is not already tracked (prevents
+    duplicate bars if the same event is processed by multiple callers/drain cycles).
+    FINISHED events always remove the bar (idempotent - safe if already removed)
+    and advance the master bar count for real-time progress.
+    ACTIVITY events update the activity indicator (copy/convert).
     """
-    job_tasks: dict[str, SubtaskID] = {}
     while True:
         try:
             kind, payload = events.get_nowait()
         except Empty:
-            return job_tasks
+            return
         infile_name = str(payload)
         if kind == JobEventKind.LOG:
             progress.log(infile_name)
+        elif kind == JobEventKind.ACTIVITY:
+            progress.set_activity(infile_name)
         elif kind == JobEventKind.STARTED:
-            job_tasks[infile_name] = progress.start_subtask(infile_name)
+            # Only add bar if not already tracking this job (prevents duplicates)
+            if infile_name not in job_tasks:
+                job_tasks[infile_name] = progress.start_subtask(infile_name)
         elif kind == JobEventKind.FINISHED:
             subtask_id = job_tasks.pop(infile_name, None)
             if subtask_id is not None:
                 progress.finish_subtask(subtask_id)
-    return job_tasks
+                # Advance master bar immediately for real-time count update
+                progress.advance()

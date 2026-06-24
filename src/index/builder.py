@@ -146,3 +146,50 @@ class IndexBuilder:
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         self.commit()
         self.close()
+
+    @classmethod
+    def from_existing(cls, db_path: Path) -> "IndexBuilder":
+        """Open an existing index database (must exist).
+
+        Args:
+            db_path: Path to the existing SQLite database file.
+
+        Returns:
+            IndexBuilder instance connected to the existing database.
+
+        Raises:
+            FileNotFoundError: If the database file does not exist.
+        """
+        if not db_path.exists():
+            raise FileNotFoundError(f"Index database not found: {db_path}")
+        return cls(db_path)
+
+    def get_summary(self) -> dict[str, int | dict[str, int]]:
+        """Get a summary of the index contents.
+
+        Returns:
+            Dictionary with total count, lossy count, and counts by job_type.
+        """
+        with self._lock:
+            cur = self._conn.execute("SELECT COUNT(*) FROM index_entries")
+            total = cur.fetchone()[0]
+
+            cur = self._conn.execute(
+                "SELECT COUNT(*) FROM index_entries WHERE is_lossy = 1"
+            )
+            lossy_count = cur.fetchone()[0]
+
+            cur = self._conn.execute(
+                "SELECT job_type, COUNT(*) FROM index_entries GROUP BY job_type"
+            )
+            by_type = dict(cur.fetchall())
+
+            cur = self._conn.execute("SELECT SUM(file_size) FROM index_entries")
+            total_bytes = cur.fetchone()[0] or 0
+
+        return {
+            "total": total,
+            "lossy": lossy_count,
+            "by_type": by_type,
+            "total_bytes": total_bytes,
+        }

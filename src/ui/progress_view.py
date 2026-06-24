@@ -124,9 +124,14 @@ class _ProgressRenderer:
         self._next_id: int = 0
         self._start_time: float | None = None
         self._phase_name = phase_name
+        self._activity: str = ""
 
     def set_phase_name(self, name: str) -> None:
         self._phase_name = name
+
+    def set_activity(self, activity: str) -> None:
+        """Update the activity indicator (e.g., 'copying' or 'converting')."""
+        self._activity = activity
 
     def add_bar(self, description: str, total: int | None = None) -> int:
         """Add a new bar; returns the internal integer ID."""
@@ -142,10 +147,10 @@ class _ProgressRenderer:
     def render(self) -> Table:
         """Build the Table renderable for the current state."""
         table = Table.grid(padding=(0, 1), pad_edge=False)
-        table.add_column(style="cyan", width=28)
+        table.add_column(style="cyan", width=36)
         table.add_column(style="green", width=self.BAR_WIDTH)
         table.add_column(style="yellow", width=7)
-        table.add_column(style="magenta", width=10)
+        table.add_column(style="magenta", width=12)
         if self._total_bytes is not None:
             table.add_column(style="blue", width=11)
 
@@ -160,8 +165,13 @@ class _ProgressRenderer:
         )
         bytes_str = self._format_bytes(self._total_bytes) if self._total_bytes else ""
 
+        remaining_count = max(0, self._total - self._master_done)
+        left_str = f"{remaining_count} left"
+
+        activity_str = f" [dim]({self._activity})[/dim]" if self._activity else ""
+
         row: list[Text | str] = [
-            f"[bold]{self._phase_name}[/] [bold cyan]{self._total}[/]",
+            f"[bold]{self._phase_name}[/] [bold cyan]{self._master_done}/{self._total}[/] [dim]({left_str})[/dim]{activity_str}",
             master_bar,
             f"{self._pct(self._master_done, self._total):>6}",
             remaining_s,
@@ -308,7 +318,7 @@ class RichProgressSink:
         self._live = Live(
             self._make_renderable(),
             console=self._console,
-            refresh_per_second=1,
+            refresh_per_second=10,
             transient=False,
             screen=False,
         )
@@ -363,3 +373,10 @@ class RichProgressSink:
                 pass
             self._live = None
         self._renderer = None
+
+    def set_activity(self, activity: str) -> None:
+        """Set the current activity description (e.g., 'copying', 'converting')."""
+        if self._renderer is None:
+            return
+        self._renderer.set_activity(activity)
+        self._refresh()

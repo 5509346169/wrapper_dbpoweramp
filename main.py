@@ -52,6 +52,248 @@ def _resolve_backend_name(args, settings, preset) -> Backend:
     )
 
 
+def _build_index_only(
+    args,
+    settings,
+    preset,
+    backend,
+    backend_name: Backend,
+) -> None:
+    """
+    Build and save an index database without performing any conversions.
+
+    This mode scans the input directory, probes audio files for lossy detection,
+    and writes all index rows to the user-specified database path before exiting.
+    """
+    from src.index.scanner import _discover_audio_files, scan_with_progress
+    from src.jobs.builder import enrich_index_rows_streaming
+
+    # Install signal handlers
+    old_sigint = signal.signal(signal.SIGINT, _signal_handler)
+    old_sigterm = signal.signal(signal.SIGTERM, _signal_handler)
+
+    try:
+        # Scan phase
+        audio_files = _discover_audio_files(args.input, args.exclude)
+        total_files = len(audio_files)
+
+        sink = RichProgressSink()
+        sink.start_phase("Scanning", total=total_files)
+        rows, _ = scan_with_progress(
+            input_path=args.input,
+            excludes=args.exclude,
+            preset=preset,
+            progress=sink,
+        )
+        sink.stop()
+
+        print(f" [green]{len(rows)} file(s) found[/green]")
+
+        if not rows:
+            print("No audio files found.")
+            return
+
+        # Determine input_root and source_root
+        if args.input.is_file():
+            input_root = args.input.parent
+        else:
+            input_root = args.input
+
+        source_root = args.source_path if args.source_path is not None else None
+
+        # Build the index to user-specified path
+        sink = RichProgressSink()
+        sink.start_phase("Probing", total=len(rows))
+
+        lossy_action: LossyAction | None = None
+        if args.lossy_action is not None:
+            lossy_action = LossyAction(args.lossy_action)
+
+        index_builder = IndexBuilder(args.build_index)
+
+        enrich_index_rows_streaming(
+            scan_rows=rows,
+            input_root=input_root,
+            source_root=source_root,
+            output_root=args.output,
+            preset=preset,
+            lossy_action=lossy_action,
+            no_lossy_check=args.no_lossy_check,
+            probe_workers=settings.execution.probe_workers,
+            progress=sink,
+            index_builder=index_builder,
+        )
+
+        index_builder.commit()
+        sink.stop()
+
+        # Print summary
+        summary = index_builder.get_summary()
+        print()
+        print(f"[green]Index built successfully:[/green] {args.build_index}")
+        print(f"  Total files: {summary['total']}")
+        print(f"  Total size: {_format_bytes(summary['total_bytes'])}")
+        print(f"  Lossy files: {summary['lossy']}")
+        for job_type, count in summary["by_type"].items():
+            print(f"  {job_type}: {count}")
+
+        index_builder.close()
+
+    finally:
+        signal.signal(signal.SIGINT, old_sigint)
+        signal.signal(signal.SIGTERM, old_sigterm)
+
+
+def _run_from_index(
+    args,
+    settings,
+    preset,
+    backend,
+    backend_name: Backend,
+) -> None:
+    """
+    Run conversions using a pre-built index database, skipping filesystem scan/probe phases.
+    """
+    global _run_interrupted, _run_failed_count
+
+    # Open the existing index
+    try:
+        index_builder = IndexBuilder.from_existing(args.index)
+    except FileNotFoundError:
+        print(f"error: index database not found: {args.index}", file=sys.stderr)
+        sys.exit(1)
+
+    source_rows = list(index_builder.iter_rows())
+    index_builder.close()
+
+    if not source_rows:
+        print("Index is empty.")
+        return
+
+    # Print summary
+    index_builder = IndexBuilder.from_existing(args.index)
+    summary_info = index_builder.get_summary()
+    index_builder.close()
+
+    print(f"Loaded index: {args.index}")
+    print(f"  Total files: {summary_info['total']}")
+    print(f"  Total size: {_format_bytes(summary_info['total_bytes'])}")
+    print(f"  Lossy files: {summary_info['lossy']}")
+
+    # Build ConversionJob list from index rows
+    def _row_to_job(row: IndexRow) -> ConversionJob:
+        is_lossy_val = row.is_lossy
+        if args.no_lossy_check:
+            reason = None
+        elif is_lossy_val:
+            if args.lossy_action is None:
+                reason = "lossy source, action=abort"
+            elif args.lossy_action == "leave":
+                reason = "lossy source, action=leave"
+            elif args.lossy_action == "copy":
+                reason = "lossy source, action=copy"
+            else:
+                reason = "lossy source, action=convert"
+        else:
+            reason = None
+        return ConversionJob(
+            infile=Path(row.source_path),
+            outfile=Path(row.dest_path),
+            preset=preset,
+            job_type=row.job_type,
+            is_lossy_source=is_lossy_val,
+            reason=reason,
+        )
+
+    jobs = [_row_to_job(r) for r in source_rows]
+
+    # Lossy gate check
+    lossy_count = summary_info["lossy"]
+    if lossy_count > 0 and args.lossy_action is None and not args.no_lossy_check:
+        print()
+        print(f"Lossy source files found ({lossy_count}). You must specify --lossy-action to proceed.")
+        print("Add one of: --lossy-action leave | --lossy-action copy | --lossy-action convert")
+        sys.exit(1)
+
+    # Install signal handlers
+    old_sigint = signal.signal(signal.SIGINT, _signal_handler)
+    old_sigterm = signal.signal(signal.SIGTERM, _signal_handler)
+
+    conv_summary: dict[str, int] = {}
+    exc_info: str | None = None
+
+    try:
+        db_path = args.db if args.db is not None else Path(settings.history.db_path)
+        db = ConversionDB(db_path)
+
+        workers = args.workers if args.workers is not None else settings.execution.default_workers
+        worker_model = args.worker_model if args.worker_model is not None else settings.execution.worker_model
+
+        total_bytes = summary_info["total_bytes"]
+        sink = RichProgressSink(total_bytes=total_bytes)
+        sink.start_phase("Converting", total=len(jobs))
+
+        conv_summary, futures, events = run_all(
+            jobs=jobs,
+            backend=backend,
+            db=db,
+            force=args.force,
+            workers=workers,
+            worker_model=worker_model,
+            verbose=args.verbose,
+            progress=sink,
+        )
+
+        if workers > 1:
+            from concurrent.futures import as_completed as _as_completed
+            from src.execution.runner import _drain_events_into_ui
+            from src.ui.progress_view import SubtaskID
+
+            job_tasks: dict[str, SubtaskID] = {}
+            remaining = list(futures)
+            while remaining:
+                _drain_events_into_ui(events, sink, job_tasks)
+                for future in list(_as_completed(remaining)):
+                    remaining.remove(future)
+                    status, infile_name, error_msg = future.result()
+                    if status == "SUCCESS":
+                        conv_summary["success"] += 1
+                    elif status == "SKIPPED":
+                        conv_summary["skipped"] += 1
+                    else:
+                        conv_summary["failed"] += 1
+                    # Note: advance() is already called by drain thread when FINISHED event is processed
+
+        sink.stop()
+
+        print()
+        print(
+            f"Done.  Success: {conv_summary['success']}  "
+            f"Skipped: {conv_summary['skipped']}  Failed: {conv_summary['failed']}"
+        )
+
+    except Exception as exc:
+        exc_info = f"{type(exc).__name__}: {exc}"
+        raise
+    finally:
+        global _run_failed_count
+        _run_failed_count = conv_summary.get("failed", 0)
+
+        signal.signal(signal.SIGINT, old_sigint)
+        signal.signal(signal.SIGTERM, old_sigterm)
+
+
+def _format_bytes(num_bytes: int) -> str:
+    """Format byte count as human-readable string."""
+    if num_bytes >= 1 << 30:
+        return f"{num_bytes / (1 << 30):.1f} GiB"
+    if num_bytes >= 1 << 20:
+        return f"{num_bytes / (1 << 20):.1f} MiB"
+    if num_bytes >= 1 << 10:
+        return f"{num_bytes / (1 << 10):.1f} KiB"
+    return f"{num_bytes} B"
+
+
 def _main() -> None:
     # 1. Parse + validate args
     args = parse_args()
@@ -84,6 +326,16 @@ def _main() -> None:
             file=sys.stderr,
         )
         sys.exit(1)
+
+    # 3b. Handle --build-index mode (build index and exit)
+    if args.build_index is not None:
+        _build_index_only(args, settings, preset, backend, backend_name)
+        return
+
+    # 3c. Handle --index mode (use existing index and run conversions)
+    if args.index is not None:
+        _run_from_index(args, settings, preset, backend, backend_name)
+        return
 
     # 4. Validate source_path if given
     if args.source_path is not None:
@@ -279,10 +531,12 @@ def _main() -> None:
         if workers > 1:
             from concurrent.futures import as_completed as _as_completed
             from src.execution.runner import _drain_events_into_ui
+            from src.ui.progress_view import SubtaskID
 
+            job_tasks: dict[str, SubtaskID] = {}
             remaining = list(futures)
             while remaining:
-                _drain_events_into_ui(events, sink)
+                _drain_events_into_ui(events, sink, job_tasks)
                 for future in list(_as_completed(remaining)):
                     remaining.remove(future)
                     status, infile_name, error_msg = future.result()
@@ -292,7 +546,7 @@ def _main() -> None:
                         summary["skipped"] += 1
                     else:
                         summary["failed"] += 1
-                    sink.advance()
+                    # Note: advance() is already called by drain thread when FINISHED event is processed
 
         sink.stop()
 
