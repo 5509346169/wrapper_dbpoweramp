@@ -297,10 +297,10 @@ def test_run_all_single_worker_produces_expected_sink_sequence(
     backend = _StubBackend([])
     sink = RecordingProgressSink()
 
-    summary, futures, _events = run_all(
+    summary, futures, _events, write_queue = run_all(
         jobs=[job],
         backend=backend,
-        db=stub_db,
+        db_path=str(stub_db.db_path),
         force=False,
         workers=1,
         worker_model="thread",
@@ -308,6 +308,7 @@ def test_run_all_single_worker_produces_expected_sink_sequence(
         progress=sink,
     )
 
+    write_queue.flush()
     assert summary["success"] == 1
     advance_calls = [c for c in sink.calls if c[0] == "advance"]
     assert len(advance_calls) == 1
@@ -340,10 +341,10 @@ def test_run_all_parallel_worker_produces_events(
     backend = _StubBackend([])
     sink = RecordingProgressSink()
 
-    _summary, _futures, events = run_all(
+    _summary, _futures, events, write_queue = run_all(
         jobs=[job_a, job_b],
         backend=backend,
-        db=stub_db,
+        db_path=str(stub_db.db_path),
         force=False,
         workers=2,
         worker_model="thread",
@@ -360,6 +361,7 @@ def test_run_all_parallel_worker_produces_events(
         time.sleep(0.01)
     _drain_events_into_ui(events, sink)
 
+    write_queue.flush()
     methods = [c[0] for c in sink.calls]
     assert "start_subtask" in methods
     assert "finish_subtask" in methods
@@ -370,10 +372,10 @@ def test_run_all_empty_job_list(stub_db: Any) -> None:
     backend = _StubBackend([])
     sink = RecordingProgressSink()
 
-    summary, futures, events = run_all(
+    summary, futures, events, write_queue = run_all(
         jobs=[],
         backend=backend,
-        db=stub_db,
+        db_path=str(stub_db.db_path),
         force=False,
         workers=1,
         worker_model="thread",
@@ -381,6 +383,7 @@ def test_run_all_empty_job_list(stub_db: Any) -> None:
         progress=sink,
     )
 
+    write_queue.flush()
     assert summary == {"success": 0, "skipped": 0, "failed": 0}
     assert futures == []
     assert sink.calls == []

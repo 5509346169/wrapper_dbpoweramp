@@ -11,7 +11,7 @@ from threading import Event, Thread
 from typing import Callable, Optional
 
 from src.backends.base import ConversionBackend
-from src.history.db import ConversionDB
+from src.history.db import ConversionDB, DBWriteQueue
 from src.models.types import ConversionJob, JobResult, JobStatus
 from src.sidecars.manager import copy_covers, copy_lyrics
 from src.ui.progress_view import ProgressSink, SubtaskID
@@ -71,6 +71,7 @@ def run_job(
     job: ConversionJob,
     backend: ConversionBackend,
     db_path: str,
+    write_queue: DBWriteQueue,
     force: bool,
     stream_callback: Optional[Callable[[str], None]],
     events: Optional[Queue] = None,
@@ -81,7 +82,8 @@ def run_job(
     Args:
         job: The conversion job to execute.
         backend: The conversion backend to use.
-        db_path: Path to the history SQLite database.
+        db_path: Path to the history SQLite database (for resume checks).
+        write_queue: Queue for async DB writes (serializes concurrent writes).
         force: If True, skip resume checks and force re-processing.
         stream_callback: Optional callback for streaming output line-by-line.
         events: Optional cross-process/thread queue for UI events. Workers push
@@ -123,7 +125,7 @@ def run_job(
                 else:
                     copy_lyrics(job.infile, job.outfile, job.preset.lyrics)
                     copy_covers(job.infile, job.outfile, job.preset.covers)
-                    db.log_conversion(
+                    write_queue.log_conversion(
                         source=str(job.infile),
                         dest=str(job.outfile),
                         job_type=job.job_type,
@@ -155,7 +157,7 @@ def run_job(
                 else:
                     copy_lyrics(job.infile, job.outfile, job.preset.lyrics)
                     copy_covers(job.infile, job.outfile, job.preset.covers)
-                    db.log_conversion(
+                    write_queue.log_conversion(
                         source=str(job.infile),
                         dest=str(job.outfile),
                         job_type=job.job_type,
@@ -198,24 +200,27 @@ def _run_event_drain_thread(
 def run_all(
     jobs: list[ConversionJob],
     backend: ConversionBackend,
-    db: ConversionDB,
+    db_path: str,
     force: bool,
     workers: int,
     worker_model: str,
     verbose: bool,
     progress: ProgressSink,
-) -> tuple[dict[str, int], list[Future], Queue]:
+    print_to_terminal: bool = False,
+) -> tuple[dict[str, int], list[Future], Queue, DBWriteQueue]:
     """
     Execute a list of ConversionJobs using a thread or process pool.
 
     Args:
         jobs: List of conversion jobs to execute.
         backend: The conversion backend to use.
-        db: The history database for logging and resume checks.
+        db_path: Path to the history SQLite database.
         force: If True, skip resume checks and force re-processing.
         workers: Maximum number of parallel workers.
         worker_model: Either "thread" for ThreadPoolExecutor or "process" for ProcessPoolExecutor.
         verbose: If True, enable verbose output streaming.
+        print_to_terminal: If True, print verbose output directly to stdout instead of
+            via the progress sink (for --verbose mode without progress bar).
         progress: A ProgressSink used to report master-bar advances, per-job bars,
             and log lines. In parallel (workers > 1) mode the caller drains the
             shared event queue and forwards events here. In single-worker mode the
@@ -223,19 +228,26 @@ def run_all(
 
     Returns:
         A tuple of (summary dict with success/skipped/failed counts, list of futures,
-        events queue). The events queue carries (JobEventKind, payload) tuples from
-        workers; callers in parallel mode drain it between iterations to update
-        per-job UI state without ever touching rich from inside a worker.
+        events queue, write queue). The events queue carries (JobEventKind, payload)
+        tuples from workers; callers in parallel mode drain it between iterations to
+        update per-job UI state without ever touching rich from inside a worker.
+        The write queue should be flushed after all jobs complete.
     """
     summary: dict[str, int] = {"success": 0, "skipped": 0, "failed": 0}
 
     if not jobs:
-        return summary, [], _make_event_queue(worker_model)
+        return summary, [], _make_event_queue(worker_model), DBWriteQueue(Path(db_path))
 
+    write_queue = DBWriteQueue(Path(db_path))
     events = _make_event_queue(worker_model)
-    stream_cb: Optional[Callable[[str], None]] = (
-        _build_stream_callback(events) if verbose else None
-    )
+
+    if print_to_terminal:
+        # When printing to terminal, use a direct stdout callback for verbose output
+        def _direct_print_callback(line: str) -> None:
+            print(line)
+        stream_cb: Optional[Callable[[str], None]] = _direct_print_callback if verbose else None
+    else:
+        stream_cb = _build_stream_callback(events) if verbose else None
 
     ExecutorCls = ThreadPoolExecutor if worker_model == "thread" else ProcessPoolExecutor
 
@@ -260,7 +272,8 @@ def run_all(
                     run_job,
                     job,
                     backend,
-                    str(db.db_path),
+                    db_path,
+                    write_queue,
                     force,
                     stream_cb,
                     events,
@@ -287,7 +300,7 @@ def run_all(
         # Final drain to capture any remaining events
         _drain_events_into_ui(events, progress, job_tasks)
 
-    return summary, futures, events
+    return summary, futures, events, write_queue
 
 
 def _drain_events_into_ui(

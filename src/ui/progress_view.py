@@ -79,6 +79,42 @@ class ProgressSink(Protocol):
         """Clean up the current phase and reset the Live renderer to None."""
         ...
 
+    def set_activity(self, activity: str) -> None:
+        """Set the current activity description (e.g., 'copying', 'converting')."""
+        ...
+
+
+class NullProgressSink:
+    """
+    A no-op ProgressSink for verbose mode where output goes directly to stdout.
+
+    All methods are no-ops - verbose output is printed directly via stream_callback.
+    """
+
+    def start_phase(self, name: str, total: int) -> None:
+        pass
+
+    def advance(self, amount: int = 1) -> None:
+        pass
+
+    def start_subtask(self, name: str) -> SubtaskID:
+        return SubtaskID(-1)
+
+    def finish_subtask(self, subtask_id: SubtaskID) -> None:
+        pass
+
+    def log(self, message: str) -> None:
+        pass
+
+    def stop(self) -> None:
+        pass
+
+    def stop_phase(self) -> None:
+        pass
+
+    def set_activity(self, activity: str) -> None:
+        pass
+
 
 # ---------------------------------------------------------------------------
 # Internal progress-bar implementation

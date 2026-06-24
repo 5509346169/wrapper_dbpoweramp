@@ -133,14 +133,18 @@ class WineDbpowerampBackend(ConversionBackend):
         extra_args = list(backend_args.args)
 
         # Build command: wine CoreConverter.exe -infile=... -outfile=... -convert_to=...
-        cmd = [
-            wine_binary,
-            coreconverter_path,
-            f"-infile={wine_infile}",
-            f"-outfile={wine_outfile}",
-            f"-convert_to={encoder}",
-            *extra_args,
-        ]
+        # Same quoting rule as the native backend: CoreConverter uses its own
+        # argument parser rather than CommandLineToArgvW rules and splits on
+        # whitespace. We pass the command line as a single pre-formatted string
+        # (shell=False) so wine forwards it verbatim to CoreConverter.exe.
+        safe_extra_args = [a.replace('"', "") for a in extra_args]
+        cmd = (
+            f'"{wine_binary}" "{coreconverter_path}" '
+            f'-infile="{wine_infile}" '
+            f'-outfile="{wine_outfile}" '
+            f'-convert_to="{encoder}" '
+            + " ".join(safe_extra_args)
+        )  # fmt: skip
 
         # Build environment with WINEPREFIX
         env: dict[str, str] = {**os.environ, "WINEPREFIX": wine_prefix_str}

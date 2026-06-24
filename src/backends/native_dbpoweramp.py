@@ -71,13 +71,34 @@ class NativeDbpowerampBackend(ConversionBackend):
         encoder = backend_args.encoder or ""
         extra_args = list(backend_args.args)
 
-        cmd = [
-            coreconverter_path,
-            f"-infile={str(job.infile)}",
-            f"-outfile={str(job.outfile)}",
-            f"-convert_to={encoder}",
-            *extra_args,
-        ]
+        # CoreConverter uses its own argument parser rather than the standard
+        # Windows CommandLineToArgvW rules. It splits the raw command line on
+        # whitespace and then strips a single pair of surrounding double quotes
+        # from each token. That means:
+        #   1. Each argument containing spaces must be wrapped in literal double
+        #      quotes *in the raw command-line string* (e.g. -infile="C:\Users\... 10\...").
+        #   2. Python's subprocess.list2cmdline escapes any embedded " with a
+        #      backslash (\"), so we cannot pass a list of args — we'd end up with
+        #      \"...\" on the wire and CoreConverter would parse the backslash as
+        #      part of the path ("Audio Source: \"C:\Users\Windows...").
+        #
+        # The fix is to build the command line as a single pre-formatted string
+        # and pass it to subprocess.Popen with shell=False. On Windows that
+        # bypasses list2cmdline and the string is handed verbatim to
+        # CreateProcessW, where CoreConverter's parser handles it correctly.
+        #
+        # extra_args come from presets.yaml and may contain embedded quotes
+        # (e.g. -encoding="SLOW"); we strip those, since CoreConverter treats
+        # them as value terminators and the embedded quotes in our preset
+        # flags are decorative wrappers (e.g. SLOW → SLOW).
+        safe_extra_args = [a.replace('"', "") for a in extra_args]  # fmt: skip
+        cmd = (
+            f'"{coreconverter_path}" '
+            f'-infile="{job.infile}" '
+            f'-outfile="{job.outfile}" '
+            f'-convert_to="{encoder}" '
+            + " ".join(safe_extra_args)
+        )  # fmt: skip
 
         stdout_lines: list[str] = []
         proc = subprocess.Popen(

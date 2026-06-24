@@ -165,6 +165,15 @@ Example:
     -V 0
 ```
 
+**Note on quoting:** CoreConverter uses its own argument parser (it splits the
+raw command line on whitespace rather than calling Windows' standard
+`CommandLineToArgvW`). Paths containing spaces **must** be wrapped in literal
+double quotes *in the raw command-line string*. The wrapper therefore builds
+the command line as a single pre-formatted string and passes it to
+`subprocess.Popen` with `shell=False`, which on Windows bypasses Python's
+`subprocess.list2cmdline` (which would otherwise backslash-escape the embedded
+quotes and cause dBpoweramp to read the path with literal `\"` prefixes).
+
 ### Error Messages
 
 If CoreConverter is not found:

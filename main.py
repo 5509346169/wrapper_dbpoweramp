@@ -12,7 +12,6 @@ from src.config.preset_loader import get_preset, load_presets
 from src.config.settings_loader import load_settings
 from src.exceptions import BackendError, PresetNotFoundError
 from src.execution.runner import run_all
-from src.history.db import ConversionDB
 from src.index.builder import IndexBuilder
 from src.index.cleanup import cleanup_index
 from src.index.scanner import (
@@ -23,7 +22,7 @@ from src.index.scanner import (
 from src.jobs.builder import enrich_index_rows_streaming
 from src.models.types import Backend, ConversionJob, LossyAction
 from src.pathing.resolver import validate_source_path
-from src.ui.progress_view import RichProgressSink
+from src.ui.progress_view import NullProgressSink, RichProgressSink
 
 # Module-level state used by the SIGINT/SIGTERM handlers below.
 _run_interrupted: bool = False
@@ -224,24 +223,30 @@ def _run_from_index(
 
     try:
         db_path = args.db if args.db is not None else Path(settings.history.db_path)
-        db = ConversionDB(db_path)
 
         workers = args.workers if args.workers is not None else settings.execution.default_workers
         worker_model = args.worker_model if args.worker_model is not None else settings.execution.worker_model
 
         total_bytes = summary_info["total_bytes"]
-        sink = RichProgressSink(total_bytes=total_bytes)
-        sink.start_phase("Converting", total=len(jobs))
+        # Use NullProgressSink for verbose mode to disable progress bar
+        if args.verbose:
+            sink = NullProgressSink()
+            progress_active = False
+        else:
+            sink = RichProgressSink(total_bytes=total_bytes)
+            sink.start_phase("Converting", total=len(jobs))
+            progress_active = True
 
-        conv_summary, futures, events = run_all(
+        conv_summary, futures, events, write_queue = run_all(
             jobs=jobs,
             backend=backend,
-            db=db,
+            db_path=str(db_path),
             force=args.force,
             workers=workers,
             worker_model=worker_model,
             verbose=args.verbose,
             progress=sink,
+            print_to_terminal=args.verbose,
         )
 
         if workers > 1:
@@ -264,7 +269,9 @@ def _run_from_index(
                         conv_summary["failed"] += 1
                     # Note: advance() is already called by drain thread when FINISHED event is processed
 
-        sink.stop()
+        if progress_active:
+            sink.stop()
+        write_queue.flush()
 
         print()
         print(
@@ -508,23 +515,29 @@ def _main() -> None:
 
         # 12. Real execution
         db_path = args.db if args.db is not None else Path(settings.history.db_path)
-        db = ConversionDB(db_path)
 
         workers = args.workers if args.workers is not None else settings.execution.default_workers
         worker_model = args.worker_model if args.worker_model is not None else settings.execution.worker_model
 
         total_bytes = sum(row.file_size for row in rows)
-        sink = RichProgressSink(total_bytes=total_bytes)
-        sink.start_phase("Converting", total=len(jobs))
-        summary, futures, events = run_all(
+        # Use NullProgressSink for verbose mode to disable progress bar
+        if args.verbose:
+            sink = NullProgressSink()
+            progress_active = False
+        else:
+            sink = RichProgressSink(total_bytes=total_bytes)
+            sink.start_phase("Converting", total=len(jobs))
+            progress_active = True
+        summary, futures, events, write_queue = run_all(
             jobs=jobs,
             backend=backend,
-            db=db,
+            db_path=str(db_path),
             force=args.force,
             workers=workers,
             worker_model=worker_model,
             verbose=args.verbose,
             progress=sink,
+            print_to_terminal=args.verbose,
         )
 
         # In parallel mode, drain the event queue until all futures complete.
@@ -548,7 +561,9 @@ def _main() -> None:
                         summary["failed"] += 1
                     # Note: advance() is already called by drain thread when FINISHED event is processed
 
-        sink.stop()
+        if progress_active:
+            sink.stop()
+        write_queue.flush()
 
         # 13. Print final summary
         print()
