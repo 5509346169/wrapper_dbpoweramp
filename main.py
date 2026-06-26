@@ -373,6 +373,9 @@ def _run_from_index(
             write_queue: DBWriteQueue | None = None
             for phase_label, batch in phases:
                 sink.start_phase(phase_label, total=len(batch))
+                if not batch:
+                    sink.stop_phase()
+                    continue
                 phase_result, futures, events, write_queue = run_all(
                     jobs=batch,
                     backend=backend,
@@ -845,9 +848,10 @@ def _main() -> None:
             phase_summary: dict[str, int] = {"success": 0, "skipped": 0, "failed": 0}
             write_queue: DBWriteQueue | None = None
             for phase_label, batch in phases:
-                total_phase_bytes = sum(j.outfile.stat().st_size for j in batch if j.outfile.exists())
-                remaining_bytes = total_bytes - total_phase_bytes
                 sink.start_phase(phase_label, total=len(batch))
+                if not batch:
+                    sink.stop_phase()
+                    continue
                 conv_summary, futures, events, write_queue = run_all(
                     jobs=batch,
                     backend=backend,

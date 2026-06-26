@@ -213,9 +213,28 @@ python main.py -I ~/Music -O ~/Converted -p flac-lossless --worker-model process
 
 ---
 
+### `--execution-mode MODE`
+
+**Type:** String (enum)
+**Required:** No
+**Choices:** `hybrid`, `phased`
+
+Execution mode for job scheduling. Overrides `execution.execution_mode` in `settings.yaml`.
+
+| Value | Description |
+|-------|-------------|
+| `hybrid` | Files processed in whatever order the pool schedules them, mixing skip/copy/convert arbitrarily |
+| `phased` | Files processed in strict order: skip jobs first, then copy jobs, then convert jobs |
+
+```sh
+python main.py -I ~/Music -O ~/Converted -p flac-lossless --execution-mode phased
+```
+
+---
+
 ### `-v, --verbose`
 
-**Type:** Flag  
+**Type:** Flag
 **Required:** No
 
 Enable live verbose conversion stream. Shows each line of output from the conversion tool.
@@ -368,6 +387,7 @@ python main.py --index my_index.db -O ~/Converted -p flac-lossless
 | `--no-lossy-check` | No | Disable lossy detection |
 | `-w`, `--workers` | No | Number of workers |
 | `--worker-model` | No | Thread or process pool |
+| `--execution-mode` | No | `hybrid` or `phased` execution |
 | `-v`, `--verbose` | No | Verbose output |
 | `--exclude` | No | Exclude folders (repeatable) |
 | `--db` | No | History database path |

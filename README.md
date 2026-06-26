@@ -152,6 +152,7 @@ python main.py -I ~/Music -O ~/Converted -p flac-lossless -v
 | `--no-lossy-check` | no | Disable ffprobe lossy detection entirely |
 | `-w, --workers N` | no | Thread/process pool size (default from `settings.yaml`) |
 | `--worker-model MODEL` | no | `thread` or `process` (default from `settings.yaml`) |
+| `--execution-mode MODE` | no | `hybrid` (interleaved) or `phased` (skip -> copy -> convert sequentially) |
 | `-v, --verbose` | no | Live verbose conversion stream |
 | `--exclude DIR` | no | Folder names to skip; can be repeated |
 | `--db PATH` | no | Override history database path |
