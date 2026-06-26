@@ -134,3 +134,73 @@ class TestIndexBuilderTableCreation:
             cur = builder._conn.execute("PRAGMA table_info(index_entries)")
             cols = {row[1] for row in cur.fetchall()}
         assert "is_lossy" in cols
+
+    def test_add_buffers_and_flushes_via_context_manager(self, tmp_path: Path) -> None:
+        """A single add() inside ``with`` must be visible on next open (auto-flushed on exit)."""
+        db_path = tmp_path / "test_index.db"
+        with IndexBuilder(db_path) as builder:
+            builder.add(
+                IndexRow(
+                    source_path="D:/music/buffered.mp3",
+                    dest_path="D:/out/buffered.flac",
+                    job_type="convert",
+                    file_size=2048,
+                    sidecar_files="",
+                    mtime=1.0,
+                    is_lossy=True,
+                )
+            )
+        with IndexBuilder(db_path) as builder:
+            rows = list(builder.iter_rows())
+        assert len(rows) == 1
+        assert rows[0].source_path == "D:/music/buffered.mp3"
+
+    def test_add_auto_flushes_at_batch_size(self, tmp_path: Path) -> None:
+        """After exactly ``_BATCH_SIZE`` adds, data must be on disk (committed)."""
+        db_path = tmp_path / "test_index.db"
+        batch_size = IndexBuilder._BATCH_SIZE
+        with IndexBuilder(db_path) as builder:
+            for i in range(batch_size):
+                builder.add(
+                    IndexRow(
+                        source_path=f"D:/music/b{i}.mp3",
+                        dest_path=f"D:/out/b{i}.flac",
+                        job_type="convert",
+                        file_size=i,
+                        sidecar_files="",
+                        mtime=0.0,
+                        is_lossy=False,
+                    )
+                )
+            # Without explicit commit, the batch boundary should have flushed.
+            rows_mid = list(builder.iter_rows())
+        assert len(rows_mid) == batch_size
+
+    def test_commit_flushes_pending_buffer(self, tmp_path: Path) -> None:
+        """commit() forces a flush of any buffered rows."""
+        db_path = tmp_path / "test_index.db"
+        builder = IndexBuilder(db_path)
+        try:
+            builder.add(
+                IndexRow(
+                    source_path="D:/music/c.mp3",
+                    dest_path="D:/out/c.flac",
+                    job_type="convert",
+                    file_size=1,
+                    sidecar_files="",
+                    mtime=0.0,
+                    is_lossy=None,
+                )
+            )
+            builder.commit()
+            rows = list(builder.iter_rows())
+            assert len(rows) == 1
+        finally:
+            builder.close()
+
+    def test_wal_mode_enabled(self, tmp_path: Path) -> None:
+        """IndexBuilder opens in WAL journal mode for fast bulk inserts."""
+        db_path = tmp_path / "test_index.db"
+        with IndexBuilder(db_path) as builder:
+            mode = builder._conn.execute("PRAGMA journal_mode").fetchone()[0]
+        assert mode.lower() == "wal"

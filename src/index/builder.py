@@ -6,6 +6,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator, Optional
 
+from src.index.schema import (
+    CREATE_INDEX_ENTRIES_TABLE_SQL,
+    INSERT_INDEX_ENTRY_SQL,
+    apply_index_pragmas,
+    ensure_is_lossy_column,
+)
+
 try:
     from src.index.scanner import IndexRow
 except ImportError:
@@ -28,6 +35,9 @@ class IndexBuilder:
     Mirrors the pattern of history.db.ConversionDB.
     """
 
+    # Auto-flush the buffered batch every N rows to bound memory and latency.
+    _BATCH_SIZE = 1000
+
     def __init__(self, db_path: Path) -> None:
         """Open the SQLite connection and ensure the index_entries table exists.
 
@@ -38,37 +48,22 @@ class IndexBuilder:
         self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
         self._lock = threading.RLock()
         with self._lock:
-            self._conn.execute(
-                "CREATE TABLE IF NOT EXISTS index_entries ("
-                "    id INTEGER PRIMARY KEY AUTOINCREMENT,"
-                "    source_path TEXT NOT NULL,"
-                "    dest_path TEXT NOT NULL,"
-                "    job_type TEXT NOT NULL,"
-                "    file_size INTEGER NOT NULL,"
-                "    sidecar_files TEXT NOT NULL,"
-                "    mtime REAL NOT NULL,"
-                "    is_lossy INTEGER,"
-                "    created_at TEXT NOT NULL"
-                ")"
-            )
+            self._conn.execute(CREATE_INDEX_ENTRIES_TABLE_SQL)
             # Migration: add is_lossy to tables created by older versions.
-            cur = self._conn.execute("PRAGMA table_info(index_entries)")
-            existing_cols = {row[1] for row in cur.fetchall()}
-            if "is_lossy" not in existing_cols:
-                self._conn.execute("ALTER TABLE index_entries ADD COLUMN is_lossy INTEGER")
+            ensure_is_lossy_column(self._conn)
+            apply_index_pragmas(self._conn)
             self._conn.commit()
 
+        self._pending: list[tuple] = []  # type: ignore[var-annotated]
+
     def add(self, row: IndexRow) -> None:
-        """Insert a single row into the index.
+        """Buffer a single row; auto-flushes every ``_BATCH_SIZE`` rows.
 
         Args:
             row: IndexRow describing the file entry.
         """
         with self._lock:
-            self._conn.execute(
-                "INSERT INTO index_entries "
-                "(source_path, dest_path, job_type, file_size, sidecar_files, mtime, is_lossy, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            self._pending.append(
                 (
                     row.source_path,
                     row.dest_path,
@@ -78,8 +73,18 @@ class IndexBuilder:
                     row.mtime,
                     None if row.is_lossy is None else int(row.is_lossy),
                     datetime.now(timezone.utc).isoformat(),
-                ),
+                )
             )
+            if len(self._pending) >= self._BATCH_SIZE:
+                self._flush_locked()
+
+    def _flush_locked(self) -> None:
+        """Internal: flush pending rows to the DB. Caller must hold ``_lock``."""
+        if not self._pending:
+            return
+        self._conn.executemany(INSERT_INDEX_ENTRY_SQL, self._pending)
+        self._conn.commit()
+        self._pending.clear()
 
     def add_many(self, rows: list[IndexRow]) -> None:
         """Insert multiple rows into the index using executemany.
@@ -104,12 +109,8 @@ class IndexBuilder:
             for row in rows
         ]
         with self._lock:
-            self._conn.executemany(
-                "INSERT INTO index_entries "
-                "(source_path, dest_path, job_type, file_size, sidecar_files, mtime, is_lossy, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                data,
-            )
+            self._conn.executemany(INSERT_INDEX_ENTRY_SQL, data)
+            self._conn.commit()
 
     def iter_rows(self) -> Iterator[IndexRow]:
         """Yield all rows in insertion order (id ASC)."""
@@ -131,9 +132,9 @@ class IndexBuilder:
             )
 
     def commit(self) -> None:
-        """Commit any pending transaction to the database."""
+        """Flush any buffered rows and commit the transaction to the database."""
         with self._lock:
-            self._conn.commit()
+            self._flush_locked()
 
     def close(self) -> None:
         """Close the database connection."""

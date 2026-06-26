@@ -1,270 +1,46 @@
-"""audio/inspector.py: Multi-tier lossy detection.
+"""audio/inspector.py: Backward-compatibility shim.
 
-Detection cascade (fastest first):
-  1. Extension — deterministic, zero I/O.
-  2. Folder-name heuristic — zero I/O (e.g. "[256Kbps-AAC]" in the path).
-  3. mutagen metadata probe — only for files where tiers 1-2 are inconclusive
-     (currently only .m4a, which can host ALAC or AAC inside the same container).
+The implementation has been split into:
 
-For callers that need futures (streaming progress), a dedicated
-``probe_generator`` fires mutagen only for the ambiguous subset, while
-extension and folder-name checks run synchronously on the main thread.
+* :mod:`src.audio.extensions`      — Tier 1: file-extension lookup
+* :mod:`src.audio.folder_heuristic` — Tier 2: folder-name heuristic
+* :mod:`src.audio.mutagen_probe`  — Tier 3: mutagen metadata probe
+* :mod:`src.audio.cascade`        — three-tier single-file cascade
+* :mod:`src.audio.batch`          — batch and parallel-future utilities
+
+This module re-exports the same public/private names from those locations
+so existing imports (e.g. ``from src.audio.inspector import is_lossy``)
+continue to work. ``MutagenFile`` is re-exported because tests monkey-patch
+it here as well.
 """
-
-from concurrent.futures import Future, ThreadPoolExecutor, as_completed
-from pathlib import Path
-from typing import Optional
 
 from mutagen import File as MutagenFile
 
-from src.exceptions import ProbeError
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Tier 1: Extension lookup
-# ─────────────────────────────────────────────────────────────────────────────
-
-# Lossless codecs (self-contained container+codec — unambiguously lossless
-# regardless of internal content, since the container IS the codec).
-UNAMBIGUOUS_LOSSLESS_EXT: frozenset[str] = frozenset({
-    ".flac", ".fla", ".ape", ".wv", ".tta", ".tak",
-    ".ofr", ".ofs", ".shn",           # optimFROG, shorten
-    # uncompressed PCM containers (container IS lossless PCM)
-    ".wav", ".aiff", ".aif", ".caf", ".bwf", ".au", ".pcm", ".raw",
-})
-
-# Ambiguous extensions — the container can hold either lossless or lossy codecs.
-# These require Tier 3 (mutagen) to resolve.
-AMBIGUOUS_EXT: frozenset[str] = frozenset({
-    ".m4a", ".mp4", ".caf",           # ALAC vs AAC
-})
-
-# Extensions that are unambiguously lossy (deterministic, zero I/O needed).
-UNAMBIGUOUS_LOSSY_EXT: frozenset[str] = frozenset({
-    ".mp3", ".mp2", ".mp1",
-    ".ogg", ".opus", ".spx",
-    ".wma", ".wmv", ".asf",
-    ".ac3", ".eac3",
-    ".dts", ".dtshd", ".dtsma",
-    ".amr", ".amrnb", ".amrwb",
-    ".ra", ".rm", ".rmvb",
-    ".aac", ".adts", ".loas",
-    ".3gp", ".3g2",
-    ".webm",
-    ".ape",                                 # .ape is in unambiguous lossless above, but
-                                            # also listed here for explicitness; it IS lossless.
-})
-
-ALL_LOSSY_EXT: frozenset[str] = (
-    UNAMBIGUOUS_LOSSY_EXT | AMBIGUOUS_EXT
+from src.audio.batch import _classify_by_ext_and_folder, probe_generator, probe_many
+from src.audio.cascade import is_lossy
+from src.audio.extensions import (
+    ALL_LOSSY_EXT,
+    AMBIGUOUS_EXT,
+    UNAMBIGUOUS_LOSSLESS_EXT,
+    UNAMBIGUOUS_LOSSY_EXT,
+    _is_lossy_by_ext,
 )
+from src.audio.folder_heuristic import LOSSY_FOLDER_TOKENS, _is_lossy_by_folder
+from src.audio.mutagen_probe import LOSSLESS_CODECS, _is_lossy_by_mutagen
 
-
-def _is_lossy_by_ext(path: Path) -> Optional[bool]:
-    """Tier 1: return True/False if extension is unambiguous, else None.
-
-    Returns None when the extension is ambiguous (.m4a, .mp4, .caf) and
-    requires Tier 3 (mutagen) to resolve.
-    """
-    ext = path.suffix.lower()
-    if ext in UNAMBIGUOUS_LOSSLESS_EXT:
-        return False
-    if ext in UNAMBIGUOUS_LOSSY_EXT:
-        return True
-    return None  # ambiguous — needs stream probe
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Tier 2: Folder-name heuristic
-# ─────────────────────────────────────────────────────────────────────────────
-
-# Folder-name tokens that signal a lossy source.  These patterns appear in
-# download/release directory names and let us skip the expensive mutagen call
-# for tagged releases.
-LOSSY_FOLDER_TOKENS: frozenset[str] = frozenset({
-    # bitrate + codec variants
-    "aac", "mp3", "v0", "v2",
-    "128k", "192k", "256k", "320k",
-    "128kbps", "192kbps", "256kbps", "320kbps",
-    "lame", "l3tag",
-    # lossy codec names
-    "ogg", "vorbis", "opus", "flac24",
-    # streaming / low-quality markers
-    "webrip", "shoprip", "itunes", "amazon",
-    "deezer", "spotify", "tidal", "qobuz",
-    # general lossy umbrella (catch-all last)
-    "mp3", "lossy",
-})
-
-
-def _is_lossy_by_folder(path: Path) -> Optional[bool]:
-    """Tier 2: return True/False if a lossy token is found in any parent dir, else None.
-
-    Scans from the file's immediate parent up to the filesystem root.
-    Stops at the first directory whose name is entirely numeric (e.g. a numeric
-    folder like "26005" in a sequential scan) to avoid false positives.
-    Also stops when we reach the filesystem root (where parent == self).
-    """
-    current: Optional[Path] = path.parent
-    while current is not None:
-        folder_lower = current.name.lower()
-        if folder_lower.isdigit():
-            break
-        for token in LOSSY_FOLDER_TOKENS:
-            if token in folder_lower:
-                return True
-        # Guard against infinite loop at filesystem root (e.g. C:\ on Windows).
-        parent = current.parent
-        if parent == current:
-            break
-        current = parent
-    return None
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Tier 3: mutagen metadata probe
-# ─────────────────────────────────────────────────────────────────────────────
-
-LOSSLESS_CODECS: frozenset[str] = {
-    "flac", "alac", "ape", "wavpack", "tta", "mlp", "truehd",
-    "pcm_s16le", "pcm_s24le", "pcm_s32le", "pcm_f32le", "pcm_f64le",
-    "shorten", "als",           # MPEG-4 ALS
-    "g711", "g711a", "g711u",   # PCM-alike telco codecs
-}
-
-
-def _is_lossy_by_mutagen(file: Path) -> bool:
-    """Tier 3: read audio metadata with mutagen and return True if the codec is not lossless.
-
-    Uses mutagen (pure Python, no subprocess).
-
-    Raises ProbeError when mutagen cannot read the file or the format is
-    unrecognized.
-    """
-    try:
-        audio = MutagenFile(file)
-    except Exception as e:
-        raise ProbeError(str(file), str(e))
-
-    if audio is None:
-        raise ProbeError(str(file), "unrecognized format")
-
-    # For MP4/M4A: mutagen.mp4.MP4 stores codec in info.codec (e.g. "alac", "aac").
-    # For other formats the codec name may come from the same attribute.
-    codec_name = getattr(audio.info, "codec", "") or ""
-    codec_name_lower = codec_name.lower()
-
-    if codec_name_lower in LOSSLESS_CODECS:
-        return False
-    if codec_name_lower in {"", "unknown"}:
-        # Fallback: try codec_description for formats that expose name there.
-        desc = getattr(audio.info, "codec_description", "") or ""
-        desc_lower = desc.lower()
-        if "alac" in desc_lower or "apple lossless" in desc_lower:
-            return False
-        raise ProbeError(str(file), f"unknown codec: {codec_name!r} ({desc!r})")
-    return True
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Combined cascade
-# ─────────────────────────────────────────────────────────────────────────────
-
-def is_lossy(file: Path) -> bool:
-    """Three-tier lossy detection for a single file.
-
-    Tiers (in order):
-      1. Extension — unambiguous extensions resolved immediately.
-      2. Folder-name heuristic — lossy token in any parent directory.
-      3. mutagen metadata probe — only for ambiguous extensions (.m4a, etc.).
-
-    Returns True if the file is lossy, False if confirmed lossless.
-    Raises ProbeError only when mutagen is invoked and fails.
-    """
-    # Tier 1
-    ext_result = _is_lossy_by_ext(file)
-    if ext_result is not None:
-        return ext_result
-
-    # Tier 2
-    folder_result = _is_lossy_by_folder(file)
-    if folder_result is not None:
-        return folder_result
-
-    # Tier 3 — the only path that hits the filesystem
-    return _is_lossy_by_mutagen(file)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Batch utilities (parallel futures for the Tier-3 subset)
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _classify_by_ext_and_folder(files: list[Path]) -> dict[Path, Optional[bool]]:
-    """Apply tiers 1 and 2 to every file in one synchronous pass.
-
-    Returns a dict mapping each file to True/False (tiers 1-2 resolved)
-    or None (needs Tier 3 probe).
-    """
-    result: dict[Path, Optional[bool]] = {}
-    for f in files:
-        ext_result = _is_lossy_by_ext(f)
-        if ext_result is not None:
-            result[f] = ext_result
-            continue
-        folder_result = _is_lossy_by_folder(f)
-        if folder_result is not None:
-            result[f] = folder_result
-            continue
-        result[f] = None  # needs Tier 3
-    return result
-
-
-def probe_generator(
-    files: list[Path], workers: int
-) -> tuple[Future, ...]:
-    """Launch mutagen probes only for the Tier-3 ambiguous subset.
-
-    Extension and folder-name checks are applied synchronously in the calling
-    thread before the executor is even created, so no worker time is wasted
-    on unambiguous files.
-    """
-    classified = _classify_by_ext_and_folder(files)
-    ambiguous_files = [f for f, v in classified.items() if v is None]
-
-    if not ambiguous_files:
-        return ()
-
-    def probe_one(file: Path) -> tuple[Path, bool]:
-        return (file, _is_lossy_by_mutagen(file))
-
-    with ThreadPoolExecutor(max_workers=workers) as executor:
-        futures = [executor.submit(probe_one, f) for f in ambiguous_files]
-    return tuple(futures)
-
-
-def probe_many(
-    files: list[Path], workers: int
-) -> dict[Path, bool]:
-    """Three-tier lossy detection for a batch of files (blocking convenience wrapper).
-
-    Extension and folder-name are applied synchronously first; mutagen is used
-    only for the ambiguous subset (.m4a, etc.) in a thread pool.
-    """
-    classified = _classify_by_ext_and_folder(files)
-    ambiguous_files = [f for f, v in classified.items() if v is None]
-
-    # Resolve ambiguous files in parallel
-    ambiguous_results: dict[Path, bool] = {}
-    if ambiguous_files:
-        for future in as_completed(probe_generator(ambiguous_files, workers)):
-            f, result = future.result()
-            ambiguous_results[f] = result
-
-    # Merge results
-    final: dict[Path, bool] = {}
-    for f, v in classified.items():
-        if v is not None:
-            final[f] = v
-        else:
-            final[f] = ambiguous_results[f]
-    return final
+__all__ = [
+    "ALL_LOSSY_EXT",
+    "AMBIGUOUS_EXT",
+    "LOSSLESS_CODECS",
+    "LOSSY_FOLDER_TOKENS",
+    "MutagenFile",
+    "UNAMBIGUOUS_LOSSLESS_EXT",
+    "UNAMBIGUOUS_LOSSY_EXT",
+    "_classify_by_ext_and_folder",
+    "_is_lossy_by_ext",
+    "_is_lossy_by_folder",
+    "_is_lossy_by_mutagen",
+    "is_lossy",
+    "probe_generator",
+    "probe_many",
+]

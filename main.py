@@ -111,13 +111,15 @@ def _build_index_only(
 
         source_root = args.source_path if args.source_path is not None else None
 
-        # Build the index to user-specified path
+        # Build the index to user-specified path.
+        # Note: enrich_index_rows_streaming owns the progress bar lifecycle —
+        # it calls start_phase("Probing", ...) internally so the bar total
+        # can be set to include the mutagen tier. We just hand it the sink.
         if verbose:
             sink = VerboseProgressSink()
             sink.log_phase("Probing")
         else:
             sink = RichProgressSink()
-            sink.start_phase("Probing", total=len(rows))
 
         lossy_action: LossyAction | None = None
         if args.lossy_action is not None:

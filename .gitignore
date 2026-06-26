@@ -49,3 +49,5 @@ Thumbs.db
 plans/
 .cursor/
 *.db-journal
+*.db-shm
+*.db-wal

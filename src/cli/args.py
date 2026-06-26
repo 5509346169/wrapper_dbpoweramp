@@ -1,4 +1,9 @@
-"""cli/args.py: Command-line argument parsing and validation."""
+"""cli/args.py: Command-line argument parsing and validation.
+
+The argparse builder is split into per-group helper functions
+(:func:`_add_required_args`, :func:`_add_backend_args`, etc.) so the
+top-level :func:`parse_args` reads as a high-level outline.
+"""
 
 from __future__ import annotations
 
@@ -8,25 +13,15 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from argparse import Namespace
+    from argparse import ArgumentParser, Namespace
 
 
-def parse_args(argv: list[str] | None = None) -> "Namespace":
-    """
-    Parse command-line arguments.
+# ---------------------------------------------------------------------------
+# Argument-group builders
+# ---------------------------------------------------------------------------
 
-    Args:
-        argv: Argument list to parse (defaults to sys.argv[1:]). For testing.
-
-    Returns:
-        An argparse.Namespace with all CLI flags as attributes.
-    """
-    parser = argparse.ArgumentParser(
-        prog="wrapper-dbpoweramp",
-        description="Audio format conversion wrapper using dBpoweramp or native ffmpeg.",
-    )
-
-    # Required
+def _add_required_args(parser: "ArgumentParser") -> None:
+    """Add the three required positional-style flags: -I, -O, -p."""
     parser.add_argument(
         "-I", "--input",
         required=True,
@@ -48,7 +43,9 @@ def parse_args(argv: list[str] | None = None) -> "Namespace":
         help="Preset name from presets.yaml (e.g. flac-lossless, mp3-320-cbr)",
     )
 
-    # Optional
+
+def _add_path_args(parser: "ArgumentParser") -> None:
+    """Add --source-path, --exclude, --db, --force."""
     parser.add_argument(
         "--source-path",
         type=Path,
@@ -58,6 +55,29 @@ def parse_args(argv: list[str] | None = None) -> "Namespace":
             "--input must be inside it"
         ),
     )
+    parser.add_argument(
+        "--exclude",
+        action="append",
+        default=[],
+        dest="exclude",
+        metavar="DIR",
+        help="Folder names to exclude from conversion (can be repeated)",
+    )
+    parser.add_argument(
+        "--db",
+        type=Path,
+        metavar="PATH",
+        help="Override history database path from settings.yaml",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Ignore resume history, reconvert everything",
+    )
+
+
+def _add_backend_args(parser: "ArgumentParser") -> None:
+    """Add --backend and the mutually-exclusive --auto-detect-backend flags."""
     parser.add_argument(
         "--backend",
         choices=["wine_dbpoweramp", "native_dbpoweramp", "native_ffmpeg"],
@@ -79,6 +99,10 @@ def parse_args(argv: list[str] | None = None) -> "Namespace":
         default=None,
         help="Disable automatic backend detection",
     )
+
+
+def _add_lossy_args(parser: "ArgumentParser") -> None:
+    """Add --lossy-action and --no-lossy-check."""
     parser.add_argument(
         "--lossy-action",
         choices=["leave", "copy", "convert"],
@@ -94,6 +118,10 @@ def parse_args(argv: list[str] | None = None) -> "Namespace":
         action="store_true",
         help="Disable lossy detection entirely (uses mutagen internally)",
     )
+
+
+def _add_execution_args(parser: "ArgumentParser") -> None:
+    """Add -w/--workers, --worker-model, -v/--verbose."""
     parser.add_argument(
         "-w", "--workers",
         type=int,
@@ -111,25 +139,10 @@ def parse_args(argv: list[str] | None = None) -> "Namespace":
         action="store_true",
         help="Live verbose conversion stream",
     )
-    parser.add_argument(
-        "--exclude",
-        action="append",
-        default=[],
-        dest="exclude",
-        metavar="DIR",
-        help="Folder names to exclude from conversion (can be repeated)",
-    )
-    parser.add_argument(
-        "--db",
-        type=Path,
-        metavar="PATH",
-        help="Override history database path from settings.yaml",
-    )
-    parser.add_argument(
-        "--force",
-        action="store_true",
-        help="Ignore resume history, reconvert everything",
-    )
+
+
+def _add_mode_args(parser: "ArgumentParser") -> None:
+    """Add --dry-run, --list-lossy, --build-index, --index."""
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -153,7 +166,43 @@ def parse_args(argv: list[str] | None = None) -> "Namespace":
         help="Use pre-built index database as input (skips filesystem scan/probe)",
     )
 
+
+# ---------------------------------------------------------------------------
+# Top-level parser
+# ---------------------------------------------------------------------------
+
+def parse_args(argv: list[str] | None = None) -> "Namespace":
+    """Parse command-line arguments.
+
+    Args:
+        argv: Argument list to parse (defaults to sys.argv[1:]). For testing.
+
+    Returns:
+        An argparse.Namespace with all CLI flags as attributes.
+    """
+    parser = argparse.ArgumentParser(
+        prog="wrapper-dbpoweramp",
+        description="Audio format conversion wrapper using dBpoweramp or native ffmpeg.",
+    )
+
+    _add_required_args(parser)
+    _add_path_args(parser)
+    _add_backend_args(parser)
+    _add_lossy_args(parser)
+    _add_execution_args(parser)
+    _add_mode_args(parser)
+
     return parser.parse_args(argv)
+
+
+# ---------------------------------------------------------------------------
+# Cross-flag validation rules
+# ---------------------------------------------------------------------------
+
+def _fail(msg: str) -> None:
+    """Print an error and exit with status 1."""
+    print(f"error: {msg}", file=sys.stderr)
+    sys.exit(1)
 
 
 def validate_args(args: "Namespace") -> None:
@@ -174,38 +223,26 @@ def validate_args(args: "Namespace") -> None:
         else:
             input_to_check = args.input
         if not input_to_check.is_relative_to(args.source_path):
-            print(
-                f"error: --source-path {args.source_path} is not an ancestor of "
-                f"--input {args.input}",
-                file=sys.stderr,
+            _fail(
+                f"--source-path {args.source_path} is not an ancestor of "
+                f"--input {args.input}"
             )
-            sys.exit(1)
 
     # Rule 2: --lossy-action and --no-lossy-check are contradictory
     if args.lossy_action is not None and args.no_lossy_check:
-        print(
-            "error: --lossy-action and --no-lossy-check are mutually exclusive",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+        _fail("--lossy-action and --no-lossy-check are mutually exclusive")
 
     # Rule 3: --dry-run and --list-lossy are mutually exclusive with --lossy-action
     # They are inspection-only modes that never need it (per spec §3 note 3).
     if (args.dry_run or args.list_lossy) and args.lossy_action is not None:
         mode = "--dry-run" if args.dry_run else "--list-lossy"
-        print(
-            f"error: {mode} is an inspection-only mode and does not use --lossy-action",
-            file=sys.stderr,
+        _fail(
+            f"{mode} is an inspection-only mode and does not use --lossy-action"
         )
-        sys.exit(1)
 
     # Rule 4: --index and --build-index are mutually exclusive with each other
     if args.index is not None and args.build_index is not None:
-        print(
-            "error: --index and --build-index are mutually exclusive",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+        _fail("--index and --build-index are mutually exclusive")
 
     # Rule 5: --index and --build-index are mutually exclusive with --dry-run, --list-lossy
     if (args.index is not None or args.build_index is not None) and (
@@ -213,26 +250,14 @@ def validate_args(args: "Namespace") -> None:
     ):
         mode = "--index" if args.index else "--build-index"
         inspection = "--dry-run" if args.dry_run else "--list-lossy"
-        print(
-            f"error: {mode} is incompatible with {inspection}",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+        _fail(f"{mode} is incompatible with {inspection}")
 
     # Rule 6: --index requires an existing file
     if args.index is not None and not args.index.exists():
-        print(
-            f"error: --index file does not exist: {args.index}",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+        _fail(f"--index file does not exist: {args.index}")
 
     # Rule 7: --build-index parent directory must exist and be writable
     if args.build_index is not None:
         parent = args.build_index.parent
         if not parent.exists():
-            print(
-                f"error: --build-index parent directory does not exist: {parent}",
-                file=sys.stderr,
-            )
-            sys.exit(1)
+            _fail(f"--build-index parent directory does not exist: {parent}")
