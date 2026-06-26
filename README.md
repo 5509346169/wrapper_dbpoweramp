@@ -13,8 +13,6 @@ See `docs/` for comprehensive documentation covering architecture, configuration
 
 - [Features](#features)
 - [Installation](#installation)
-  - [Linux](#linux)
-  - [Windows](#windows)
   - [Python dependencies](#python-dependencies)
 - [Quick start](#quick-start)
 - [Available presets](#available-presets)
@@ -45,28 +43,6 @@ See `docs/` for comprehensive documentation covering architecture, configuration
 
 ## Installation
 
-### Linux
-
-Install audio tools from the official CachyOS repos:
-
-```sh
-sudo pacman -S ffmpeg wine python-pyyaml python-rich
-```
-
-| Dependency | Purpose |
-|------------|---------|
-| `ffmpeg` | Provides `ffmpeg` and `ffprobe`. For `aac-vbr-high` with FDK AAC, use `ffmpeg-full` from AUR. |
-| `wine` | Provides `wine`, `winepath`, and Wine runtime. No `wine-mono` or `wine-gecko` needed. |
-| `python-pyyaml` | YAML configuration parsing |
-| `python-rich` | Terminal UI with colored output and progress bars |
-
-### Windows
-
-- **Python 3.10+** recommended
-- Install dBpoweramp Reference using the official Windows installer
-- Default path: `C:\Program Files\dBpoweramp\CoreConverter.exe`
-- Install Python dependencies:
-
 ```sh
 pip install pyyaml rich
 ```
@@ -78,7 +54,7 @@ No Wine needed on Windows — paths are passed verbatim to `CoreConverter.exe`.
 ```sh
 pip install -r requirements.txt
 # or, with uv:
-uv sync
+uv sync # uv pip install -r requirements.txt
 ```
 
 `requirements.txt` and `pyproject.toml` both declare only `pyyaml` and `rich`.

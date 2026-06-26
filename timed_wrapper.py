@@ -7,114 +7,151 @@ import signal
 import subprocess
 import sys
 import time
-from pathlib import Path
+from threading import Event, Thread, Timer
 
 
-def _make_signal_handler(proc: subprocess.Popen | None, start: float):
-    def handler(signum, frame):
-        elapsed = time.monotonic() - start
-        sig_name = signal.Signals(signum).name
-        print(f"\n[SIGNAL {sig_name}]  [ELAPSED] {elapsed:.2f}s", flush=True)
-        if proc and proc.poll() is None:
-            print(f"[TERMINATING] PID {proc.pid} ...", flush=True)
-            proc.terminate()
-            try:
-                proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                print(f"[KILLING] PID {proc.pid} ...", flush=True)
-                proc.kill()
-                proc.wait()
-        sys.exit(128 + signum)
-    return handler
+try:
+    import msvcrt
+    _HAS_MSVCRT = True
+except ImportError:
+    _HAS_MSVCRT = False
+
+
+def _log(msg: str):
+    """Print wrapper metadata to stderr so it never mixes with subprocess output."""
+    print(msg, flush=True)
+
+
+def _keyboard_monitor(kill_event: Event, stop_event: Event, proc_ref, start_ref):
+    """Background thread: poll for 'k' keypress to kill the subprocess."""
+    while not kill_event.wait(timeout=0.2):
+        try:
+            if _HAS_MSVCRT and msvcrt.kbhit():
+                ch = msvcrt.getch()
+                if ch in (b'k', b'K'):
+                    proc = proc_ref()
+                    start = start_ref()
+                    elapsed = time.monotonic() - start
+                    _log(f"\n[KEY 'k' PRESSED]  [ELAPSED] {elapsed:.2f}s")
+                    if proc and proc.poll() is None:
+                        _log(f"[TERMINATING] PID {proc.pid} ...")
+                        proc.terminate()
+                        try:
+                            proc.wait(timeout=5)
+                        except subprocess.TimeoutExpired:
+                            _log(f"[KILLING] PID {proc.pid} ...")
+                            proc.kill()
+                            proc.wait()
+                    stop_event.set()
+                    break
+        except Exception:
+            pass
 
 
 def run_timed(command: list[str], timeout: int | None = None) -> int:
     """
-    Run ``command`` with optional timeout, streaming stdout+stderr in real-time.
+    Run ``command`` with optional timeout. The subprocess output goes directly
+    to the terminal (no piping), so Rich progress bars and Unicode characters
+    render correctly. Wrapper metadata is printed to stderr.
 
-    Reports elapsed time on natural exit, timeout, or signal kill.
+    Press 'k' to kill the process early (Windows: immediate; Unix: next poll).
 
     Args:
         command: Command and arguments as a list of strings.
-        timeout: Optional timeout in seconds. Process receives SIGTERM (then SIGKILL).
+        timeout: Optional timeout in seconds.
 
     Returns:
-        Exit code from the subprocess (128+signal on signal death, -1 on KeyboardInterrupt).
+        Exit code from the subprocess.
     """
-    print(f"[CMD] {' '.join(command)}", flush=True)
-    print(f"[START] {time.strftime('%H:%M:%S')}", flush=True)
+    proc_env = os.environ.copy()
+    proc_env["PYTHONIOENCODING"] = "utf-8"
+
+    _log(f"[CMD] {' '.join(command)}")
+    _log(f"[START] {time.strftime('%H:%M:%S')}")
     if timeout is not None:
-        print(f"[TIMEOUT] {timeout}s", flush=True)
+        _log(f"[TIMEOUT] {timeout}s")
+    if _HAS_MSVCRT:
+        _log("[INTERACTIVE] Press 'k' to kill the process  |  Ctrl+C to interrupt")
 
     start = time.monotonic()
-    old_handlers: dict[int, signal.Handler] = {}
-
     proc: subprocess.Popen | None = None
     timed_out = False
 
-    # Install signal handlers so Ctrl+C / SIGTERM propagate correctly.
+    proc_ref = lambda: proc
+    start_ref = lambda: start
+    kill_event = Event()
+    stop_event = Event()
+
     for sig in (signal.SIGINT, signal.SIGTERM):
-        old_handlers[sig] = signal.signal(sig, signal.SIG_DFL)
+        signal.signal(sig, signal.SIG_DFL)
+
+    monitor = Thread(target=_keyboard_monitor, args=(kill_event, stop_event, proc_ref, start_ref), daemon=True)
+    monitor.start()
+
+    timer: Timer | None = None
+
+    def timeout_handler():
+        nonlocal timed_out, proc
+        elapsed = time.monotonic() - start
+        _log(f"\n[TIMEOUT after {timeout}s]  [ELAPSED] {elapsed:.2f}s")
+        if proc and proc.poll() is None:
+            timed_out = True
+            _log(f"[TERMINATING] PID {proc.pid} ...")
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                _log(f"[KILLING] PID {proc.pid} ...")
+                proc.kill()
+                proc.wait()
+        stop_event.set()
+
+    if timeout is not None:
+        timer = Timer(timeout, timeout_handler)
+        timer.daemon = True
+        timer.start()
 
     try:
+        # No stdout/stderr piping — output goes straight to terminal.
+        # stdin=/dev/null so the subprocess never reads wrapper keyboard input.
         proc = subprocess.Popen(
             command,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
+            stdin=subprocess.DEVNULL,
+            env=proc_env,
         )
 
-        if timeout is not None:
-            def timeout_handler():
-                nonlocal timed_out, proc
-                elapsed = time.monotonic() - start
-                print(f"\n[TIMEOUT after {timeout}s]  [ELAPSED] {elapsed:.2f}s", flush=True)
-                if proc and proc.poll() is None:
-                    timed_out = True
-                    print(f"[TERMINATING] PID {proc.pid} ...", flush=True)
-                    proc.terminate()
-                    try:
-                        proc.wait(timeout=5)
-                    except subprocess.TimeoutExpired:
-                        print(f"[KILLING] PID {proc.pid} ...", flush=True)
-                        proc.kill()
-                        proc.wait()
+        # Poll every 0.5s so stop_event can interrupt the wait.
+        while True:
+            ret = proc.poll()
+            if ret is not None:
+                exit_code = ret
+                break
+            if stop_event.wait(timeout=0.5):
+                exit_code = proc.wait()
+                break
 
-            timer = signal.ITIMER_REAL
-            signal.setitimer(timer, timeout, 0.0)
-            old_sigalrm = signal.signal(signal.SIGALRM, lambda s, f: timeout_handler())
-
-        # Stream output in real-time.
-        if proc.stdout:
-            for line in proc.stdout:
-                print(line, end="", flush=True)
-
-        exit_code = proc.wait()
         elapsed = time.monotonic() - start
+        kill_event.set()
+        monitor.join(timeout=1)
 
-        print(f"[EXIT] {exit_code}", flush=True)
-        print(f"[ELAPSED] {elapsed:.2f}s", flush=True)
+        _log(f"\n[EXIT] {exit_code}")
+        _log(f"[ELAPSED] {elapsed:.2f}s")
         if timed_out:
-            print("[KILLED] True", flush=True)
+            _log("[KILLED] True")
         return exit_code
 
     except KeyboardInterrupt:
-        # Should not reach here — SIG_DFL handles it, but keep as fallback.
         elapsed = time.monotonic() - start
-        print(f"\n[INTERRUPTED]  [ELAPSED] {elapsed:.2f}s", flush=True)
+        _log(f"\n[INTERRUPTED]  [ELAPSED] {elapsed:.2f}s")
         if proc and proc.poll() is None:
             proc.terminate()
             proc.wait()
         return -1
 
     finally:
-        # Restore old signal handlers.
-        for sig, handler in old_handlers.items():
-            signal.signal(sig, handler)
-        if timeout is not None:
-            signal.setitimer(signal.ITIMER_REAL, 0, 0.0)
-            signal.signal(signal.SIGALRM, signal.SIG_DFL)
+        kill_event.set()
+        if timer is not None:
+            timer.cancel()
 
 
 if __name__ == "__main__":
@@ -131,7 +168,6 @@ if __name__ == "__main__":
 
     command = sys.argv[1:]
 
-    # Parse --timeout N from command line.
     timeout: int | None = None
     if command and command[0] == "--timeout":
         timeout = int(command[1])
