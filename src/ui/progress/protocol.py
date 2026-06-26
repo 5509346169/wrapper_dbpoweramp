@@ -66,7 +66,7 @@ class ProgressSink(Protocol):
         ...
 
     def stop_phase(self) -> None:
-        """Clean up the current phase and reset the Live renderer to None."""
+        """Flush pending state to the terminal, then clean up the Live renderer."""
         ...
 
     def set_activity(self, activity: str) -> None:

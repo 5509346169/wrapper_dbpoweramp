@@ -65,6 +65,18 @@ class RichProgressSink:
     # internal helpers
     # ------------------------------------------------------------------
 
+    def _flush_sync(self) -> None:
+        """Force a single synchronous render so the terminal shows the current state.
+
+        After this returns, the Live is still alive — its stop() method (called
+        by ``__exit__``) will call refresh() again before doing its cleanup,
+        so the final committed state is preserved on screen.
+        """
+        if self._live is None:
+            return
+        self._live.update(self._make_renderable())
+        self._live.refresh()
+
     def _refresh(self) -> None:
         """Push a refresh to the Live display, throttled to ~20Hz.
 
@@ -178,14 +190,18 @@ class RichProgressSink:
         self._renderer = None
 
     def stop_phase(self) -> None:
-        """Clean up the current Live instance and reset the renderer."""
+        """Flush pending state, then cleanly tear down the Live display."""
+        self._flush_sync()
         if self._live is not None:
             try:
-                self._live.__exit__(None, None, None)
+                self._live.stop()
             except Exception:
                 pass
             self._live = None
         self._renderer = None
+        self._log_lines.clear()
+        self._last_refresh_ts = 0.0
+        self._refresh_pending = False
 
     def set_activity(self, activity: str) -> None:
         """Set the current activity description (e.g., 'copying' or 'converting')."""
