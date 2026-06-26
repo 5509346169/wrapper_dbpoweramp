@@ -121,7 +121,7 @@ def _add_lossy_args(parser: "ArgumentParser") -> None:
 
 
 def _add_execution_args(parser: "ArgumentParser") -> None:
-    """Add -w/--workers, --worker-model, -v/--verbose."""
+    """Add -w/--workers, --worker-model, --execution-mode, -v/--verbose."""
     parser.add_argument(
         "-w", "--workers",
         type=int,
@@ -133,6 +133,13 @@ def _add_execution_args(parser: "ArgumentParser") -> None:
         choices=["thread", "process"],
         metavar="MODEL",
         help="Override execution.worker_model from settings.yaml",
+    )
+    parser.add_argument(
+        "--execution-mode",
+        choices=["hybrid", "phased"],
+        default="hybrid",
+        metavar="MODE",
+        help="Execution mode: hybrid (interleave skip/copy/convert) or phased (skip → copy → convert sequentially)",
     )
     parser.add_argument(
         "-v", "--verbose",

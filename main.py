@@ -14,7 +14,7 @@ from src.config.preset_loader import get_preset, load_presets
 from src.config.settings_loader import load_settings
 from src.exceptions import BackendError, PresetNotFoundError
 from src.execution.runner import run_all
-from src.history.db import ConversionDB
+from src.history.db import ConversionDB, DBWriteQueue
 from src.index.builder import IndexBuilder
 from src.index.cleanup import cleanup_index
 from src.index.scan_cache import ScanCache
@@ -25,7 +25,7 @@ from src.index.scanner import (
     scan_with_progress,
 )
 from src.jobs.builder import enrich_index_rows_streaming
-from src.models.types import Backend, ConversionJob, LossyAction
+from src.models.types import Backend, ConversionJob, ExecutionMode, LossyAction
 from src.pathing.resolver import validate_source_path
 from src.ui.progress_view import NullProgressSink, RichProgressSink, VerboseProgressSink
 
@@ -303,6 +303,7 @@ def _run_from_index(
 
         workers = args.workers if args.workers is not None else settings.execution.default_workers
         worker_model = args.worker_model if args.worker_model is not None else settings.execution.worker_model
+        execution_mode = getattr(args, "execution_mode", "hybrid")
 
         # Pre-filter: identify already-converted files before starting any progress bar.
         pending_jobs: list[ConversionJob] = []
@@ -324,62 +325,95 @@ def _run_from_index(
             pending_jobs = list(jobs)
             skipped_jobs = []
 
+        if execution_mode == "phased":
+            prefilter_skips = skipped_jobs
+            pending_for_pool = [j for j in pending_jobs if j.job_type != "skip"]
+        else:
+            prefilter_skips = []
+            pending_for_pool = pending_jobs
+
         total_bytes = summary_info["total_bytes"]
-        # Use NullProgressSink for verbose mode to disable progress bar
+
         if args.verbose:
             sink = NullProgressSink()
             progress_active = False
+            if prefilter_skips:
+                print(f"[Skipping] {len(prefilter_skips)} already-converted file(s)")
+            phases = _run_jobs_by_phase(pending_for_pool, execution_mode)
+            for phase_label, batch in phases:
+                print(f"Phase — {phase_label} ({len(batch)} file(s))")
+            if phases:
+                phase_summary, _, _, write_queue = run_all(
+                    jobs=[j for _, batch in phases for j in batch],
+                    backend=backend,
+                    db_path=str(db_path),
+                    force=args.force,
+                    workers=workers,
+                    worker_model=worker_model,
+                    verbose=args.verbose,
+                    progress=sink,
+                    print_to_terminal=args.verbose,
+                )
+            else:
+                phase_summary = {"success": 0, "skipped": 0, "failed": 0}
+                write_queue = DBWriteQueue(Path(db_path), worker_model)
+            conv_summary = phase_summary
         else:
             sink = RichProgressSink(total_bytes=total_bytes)
-            if skipped_jobs:
-                sink.start_phase("Skipping", total=len(skipped_jobs))
-                for job in skipped_jobs:
+            if prefilter_skips:
+                sink.start_phase("Skipping", total=len(prefilter_skips))
+                for job in prefilter_skips:
                     sink.advance()
                     if hasattr(sink, "log_file"):
                         sink.log_file(f"  {job.infile.name}")
                 sink.stop_phase()
-                sink.log(f"Skipped {len(skipped_jobs)} already-converted file(s)")
-            sink.start_phase("Converting", total=len(pending_jobs))
+                sink.log(f"Skipped {len(prefilter_skips)} already-converted file(s)")
+            phases = _run_jobs_by_phase(pending_for_pool, execution_mode)
+            phase_summary: dict[str, int] = {"success": 0, "skipped": 0, "failed": 0}
+            write_queue: DBWriteQueue | None = None
+            for phase_label, batch in phases:
+                sink.start_phase(phase_label, total=len(batch))
+                phase_result, futures, events, write_queue = run_all(
+                    jobs=batch,
+                    backend=backend,
+                    db_path=str(db_path),
+                    force=args.force,
+                    workers=workers,
+                    worker_model=worker_model,
+                    verbose=args.verbose,
+                    progress=sink,
+                    print_to_terminal=args.verbose,
+                )
+                if workers > 1:
+                    from concurrent.futures import as_completed as _as_completed
+                    from src.execution.runner import _drain_events_into_ui
+                    from src.ui.progress_view import SubtaskID
+
+                    job_tasks: dict[str, SubtaskID] = {}
+                    remaining = list(futures)
+                    while remaining:
+                        _drain_events_into_ui(events, sink, job_tasks)
+                        for future in list(_as_completed(remaining)):
+                            remaining.remove(future)
+                            status, infile_name, error_msg = future.result()
+                            if status == "SUCCESS":
+                                phase_result["success"] += 1
+                            elif status == "SKIPPED":
+                                phase_result["skipped"] += 1
+                            else:
+                                phase_result["failed"] += 1
+                for k in phase_summary:
+                    phase_summary[k] += phase_result.get(k, 0)
+                sink.stop_phase()
             progress_active = True
-
-        conv_summary, futures, events, write_queue = run_all(
-            jobs=pending_jobs,
-            backend=backend,
-            db_path=str(db_path),
-            force=args.force,
-            workers=workers,
-            worker_model=worker_model,
-            verbose=args.verbose,
-            progress=sink,
-            print_to_terminal=args.verbose,
-        )
-
-        if workers > 1:
-            from concurrent.futures import as_completed as _as_completed
-            from src.execution.runner import _drain_events_into_ui
-            from src.ui.progress_view import SubtaskID
-
-            job_tasks: dict[str, SubtaskID] = {}
-            remaining = list(futures)
-            while remaining:
-                _drain_events_into_ui(events, sink, job_tasks)
-                for future in list(_as_completed(remaining)):
-                    remaining.remove(future)
-                    status, infile_name, error_msg = future.result()
-                    if status == "SUCCESS":
-                        conv_summary["success"] += 1
-                    elif status == "SKIPPED":
-                        conv_summary["skipped"] += 1
-                    else:
-                        conv_summary["failed"] += 1
-                    # Note: advance() is already called by drain thread when FINISHED event is processed
+            conv_summary = phase_summary
 
         if progress_active:
             sink.stop()
-        write_queue.flush()
+        if write_queue is not None:
+            write_queue.flush()
 
-        # Add pre-filtered skips to the summary (pool-level skips may also exist).
-        conv_summary["skipped"] += len(skipped_jobs)
+        conv_summary["skipped"] += len(prefilter_skips)
 
         print()
         print(
@@ -407,6 +441,27 @@ def _format_bytes(num_bytes: int) -> str:
     if num_bytes >= 1 << 10:
         return f"{num_bytes / (1 << 10):.1f} KiB"
     return f"{num_bytes} B"
+
+
+def _run_jobs_by_phase(
+    jobs: list[ConversionJob],
+    execution_mode: str,
+) -> list[tuple[str, list[ConversionJob]]]:
+    """Split jobs into sequential phases according to execution_mode.
+
+    In 'hybrid' mode returns a single batch containing all jobs (unchanged behaviour).
+    In 'phased' mode returns three batches in strict order: skip → copy → convert.
+    Empty job-type lists are omitted from the result.
+    """
+    if execution_mode == "hybrid":
+        return [("convert", jobs)]
+
+    phased: list[tuple[str, list[ConversionJob]]] = []
+    for jtype, label in [("skip", "Skipping"), ("copy", "Copying"), ("convert", "Converting")]:
+        batch = [j for j in jobs if j.job_type == jtype]
+        if batch:
+            phased.append((label, batch))
+    return phased
 
 
 def _main() -> None:
@@ -689,13 +744,25 @@ def _main() -> None:
 
         # 11b. --dry-run: print job list and exit
         if args.dry_run:
+            execution_mode = getattr(args, "execution_mode", "hybrid")
+            phases = _run_jobs_by_phase(jobs, execution_mode)
             print("Dry run — jobs that would be executed:")
             print()
-            for job in jobs:
-                lossy_marker = " [LOSSY]" if job.is_lossy_source else ""
-                print(f"  {job.infile} -> {job.outfile}  [{job.job_type}]{lossy_marker}")
-                if job.reason:
-                    print(f"    reason: {job.reason}")
+            if execution_mode == "phased":
+                total_phases = len(phases)
+                for i, (phase_label, batch) in enumerate(phases, 1):
+                    print(f"Phase {i}/{total_phases} — {phase_label} ({len(batch)} job(s))")
+                    for job in batch:
+                        lossy_marker = " [LOSSY]" if job.is_lossy_source else ""
+                        print(f"  {job.infile} -> {job.outfile}  [{job.job_type}]{lossy_marker}")
+                        if job.reason:
+                            print(f"    reason: {job.reason}")
+            else:
+                for job in jobs:
+                    lossy_marker = " [LOSSY]" if job.is_lossy_source else ""
+                    print(f"  {job.infile} -> {job.outfile}  [{job.job_type}]{lossy_marker}")
+                    if job.reason:
+                        print(f"    reason: {job.reason}")
             print()
             print(f"Total: {len(jobs)} job(s)")
             return
@@ -705,6 +772,7 @@ def _main() -> None:
 
         workers = args.workers if args.workers is not None else settings.execution.default_workers
         worker_model = args.worker_model if args.worker_model is not None else settings.execution.worker_model
+        execution_mode = getattr(args, "execution_mode", "hybrid")
 
         # Pre-filter: identify already-converted files before starting any progress bar.
         pending_jobs: list[ConversionJob] = []
@@ -726,62 +794,102 @@ def _main() -> None:
             pending_jobs = list(jobs)
             skipped_jobs = []
 
+        # In phased mode, skip-jobs are handled as a dedicated phase and are not
+        # included in pending_jobs for the pool. In hybrid mode they are already
+        # filtered out above (they are record-only skips that ran through the pool).
+        if execution_mode == "phased":
+            prefilter_skips = skipped_jobs
+            pending_for_pool = [j for j in pending_jobs if j.job_type != "skip"]
+        else:
+            prefilter_skips = []
+            pending_for_pool = pending_jobs
+
         total_bytes = sum(row.file_size for row in rows)
-        # Use NullProgressSink for verbose mode to disable progress bar
+
+        # In verbose mode: no progress bar, print phase labels directly.
         if args.verbose:
             sink = NullProgressSink()
             progress_active = False
+            if prefilter_skips:
+                print(f"[Skipping] {len(prefilter_skips)} already-converted file(s)")
+            phases = _run_jobs_by_phase(pending_for_pool, execution_mode)
+            for phase_label, batch in phases:
+                print(f"Phase — {phase_label} ({len(batch)} file(s))")
+            if phases:
+                phase_summary, _, _, write_queue = run_all(
+                    jobs=[j for _, batch in phases for j in batch],
+                    backend=backend,
+                    db_path=str(db_path),
+                    force=args.force,
+                    workers=workers,
+                    worker_model=worker_model,
+                    verbose=args.verbose,
+                    progress=sink,
+                    print_to_terminal=args.verbose,
+                )
+            else:
+                phase_summary = {"success": 0, "skipped": 0, "failed": 0}
+                write_queue = DBWriteQueue(Path(db_path), worker_model)
+            summary = phase_summary
         else:
             sink = RichProgressSink(total_bytes=total_bytes)
-            if skipped_jobs:
-                sink.start_phase("Skipping", total=len(skipped_jobs))
-                for job in skipped_jobs:
+            if prefilter_skips:
+                sink.start_phase("Skipping", total=len(prefilter_skips))
+                for job in prefilter_skips:
                     sink.advance()
                     if hasattr(sink, "log_file"):
                         sink.log_file(f"  {job.infile.name}")
                 sink.stop_phase()
-                sink.log(f"Skipped {len(skipped_jobs)} already-converted file(s)")
-            sink.start_phase("Converting", total=len(pending_jobs))
+                sink.log(f"Skipped {len(prefilter_skips)} already-converted file(s)")
+            phases = _run_jobs_by_phase(pending_for_pool, execution_mode)
+            phase_summary: dict[str, int] = {"success": 0, "skipped": 0, "failed": 0}
+            write_queue: DBWriteQueue | None = None
+            for phase_label, batch in phases:
+                total_phase_bytes = sum(j.outfile.stat().st_size for j in batch if j.outfile.exists())
+                remaining_bytes = total_bytes - total_phase_bytes
+                sink.start_phase(phase_label, total=len(batch))
+                conv_summary, futures, events, write_queue = run_all(
+                    jobs=batch,
+                    backend=backend,
+                    db_path=str(db_path),
+                    force=args.force,
+                    workers=workers,
+                    worker_model=worker_model,
+                    verbose=args.verbose,
+                    progress=sink,
+                    print_to_terminal=args.verbose,
+                )
+                if workers > 1:
+                    from concurrent.futures import as_completed as _as_completed
+                    from src.execution.runner import _drain_events_into_ui
+                    from src.ui.progress_view import SubtaskID
+
+                    job_tasks: dict[str, SubtaskID] = {}
+                    remaining = list(futures)
+                    while remaining:
+                        _drain_events_into_ui(events, sink, job_tasks)
+                        for future in list(_as_completed(remaining)):
+                            remaining.remove(future)
+                            status, infile_name, error_msg = future.result()
+                            if status == "SUCCESS":
+                                conv_summary["success"] += 1
+                            elif status == "SKIPPED":
+                                conv_summary["skipped"] += 1
+                            else:
+                                conv_summary["failed"] += 1
+                for k in phase_summary:
+                    phase_summary[k] += conv_summary.get(k, 0)
+                sink.stop_phase()
             progress_active = True
-        summary, futures, events, write_queue = run_all(
-            jobs=pending_jobs,
-            backend=backend,
-            db_path=str(db_path),
-            force=args.force,
-            workers=workers,
-            worker_model=worker_model,
-            verbose=args.verbose,
-            progress=sink,
-            print_to_terminal=args.verbose,
-        )
-
-        # In parallel mode, drain the event queue until all futures complete.
-        if workers > 1:
-            from concurrent.futures import as_completed as _as_completed
-            from src.execution.runner import _drain_events_into_ui
-            from src.ui.progress_view import SubtaskID
-
-            job_tasks: dict[str, SubtaskID] = {}
-            remaining = list(futures)
-            while remaining:
-                _drain_events_into_ui(events, sink, job_tasks)
-                for future in list(_as_completed(remaining)):
-                    remaining.remove(future)
-                    status, infile_name, error_msg = future.result()
-                    if status == "SUCCESS":
-                        summary["success"] += 1
-                    elif status == "SKIPPED":
-                        summary["skipped"] += 1
-                    else:
-                        summary["failed"] += 1
-                    # Note: advance() is already called by drain thread when FINISHED event is processed
+            summary = phase_summary
 
         if progress_active:
             sink.stop()
-        write_queue.flush()
+        if write_queue is not None:
+            write_queue.flush()
 
-        # Add pre-filtered skips to the summary (pool-level skips may also exist).
-        summary["skipped"] += len(skipped_jobs)
+        # Add pre-filtered skips to the summary.
+        summary["skipped"] += len(prefilter_skips)
 
         # 13. Print final summary
         print()

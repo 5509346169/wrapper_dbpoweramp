@@ -14,6 +14,13 @@ class Backend(str, Enum):
     NATIVE_FFMPEG = "native_ffmpeg"
 
 
+class ExecutionMode(str, Enum):
+    """Execution mode: hybrid (interleaved) or phased (skip → copy → convert)."""
+
+    HYBRID = "hybrid"
+    PHASED = "phased"
+
+
 class LossyAction(str, Enum):
     """Action to take on lossy source files: leave (skip), copy, or convert."""
 
