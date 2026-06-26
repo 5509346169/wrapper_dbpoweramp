@@ -1,0 +1,75 @@
+site_name: dBpoweramp Wrapper
+site_url: https://5509346169.github.io/wrapper_dbpoweramp/
+site_description: Convert audio files between formats with or without dBpoweramp installed, on Linux or Windows.
+
+repo_name: 5509346169/wrapper_dbpoweramp
+repo_url: https://github.com/5509346169/wrapper_dbpoweramp
+
+docs_dir: docs
+
+theme:
+  name: material
+  language: en
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - content.code.copy
+    - content.code.annotate
+    - search.suggest
+    - search.highlight
+
+plugins:
+  - search
+
+nav:
+  - Home: index.md
+  - Overview: overview.md
+  - Installation: installation.md
+  - Configuration:
+      - Configuration: configuration.md
+      - CLI Reference: cli.md
+      - Presets: presets.md
+  - Architecture: architecture.md
+  - Backends: backends.md
+  - Workflow: workflow.md
+  - Advanced:
+      - File Index: file-index.md
+      - Lossy Handling: lossy-handling.md
+      - Sidecar Files: sidecar-files.md
+      - Error Handling: error-handling.md
+      - Testing: testing.md
+  - Reference:
+      - API: api.md
+      - Modules: modules.md
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - admonition
+  - pymdownx.details
+  - tables
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true

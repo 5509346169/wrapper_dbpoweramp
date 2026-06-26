@@ -1,614 +1,264 @@
 # Architecture
 
-This document provides an overview of the system architecture for wrapper-dbpoweramp, explaining how the components fit together.
+This document describes how dBpoweramp Wrapper is structured internally. It is aimed at developers who want to understand, extend, or debug the tool. End users should start with [README.md](https://github.com/5509346169/wrapper_dbpoweramp/blob/main/README.md) and [docs/index.md](index.md).
 
 ---
 
-## High-Level Architecture
+## High-level system overview
 
-The wrapper is organized into a pipeline of independent, composable stages:
+The tool is a pipeline: it scans a directory tree, classifies each file, then converts (or copies) them in parallel. Two SQLite databases and an event queue provide coordination.
 
-```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│   CLI       │────▶│   Index     │────▶│   Jobs      │────▶│  Execution  │
-│   Args      │     │   Scanner   │     │   Builder   │     │   Runner    │
-└─────────────┘     └─────────────┘     └─────────────┘     └─────────────┘
-       │                   │                   │                   │
-       │                   │                   │                   │
-       ▼                   ▼                   ▼                   ▼
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│  Settings   │     │  Audio      │     │  Conversion │     │  Backends   │
-│  Loader     │     │  Inspector  │     │  Job Model  │     │  (FFmpeg,   │
-│             │     │             │     │             │     │   dBpoweramp)│
-└─────────────┘     └─────────────┘     └─────────────┘     └─────────────┘
-```
+```mermaid
+flowchart LR
+    CLI["main.py\nCLI entry point"]
+    CFG["config/\nSettings + Presets"]
+    SCAN["index/\nScanner + Cache"]
+    PROBE["audio/\nLossy cascade"]
+    BUILD["jobs/\nJob builder"]
+    EXEC["execution/\nThread/Process pool"]
+    BACK["backends/\nFFmpeg / dBpoweramp"]
+    HIST["history/\nConversionDB + WriteQueue"]
+    SIDE["sidecars/\nLyrics + Cover"]
+    UI["ui/\nRich progress sink"]
 
----
-
-## Component Overview
-
-### Entry Point (`main.py`)
-
-The `main.py` module is the orchestrator that:
-
-1. Parses command-line arguments
-2. Loads configuration files (`settings.yaml`, `presets.yaml`)
-3. Resolves the appropriate backend based on CLI flags and auto-detection
-4. Manages the conversion pipeline: scan → probe → build jobs → execute
-5. Handles signal handlers for graceful interruption
-6. Manages the temporary index database lifecycle
-
-### Core Packages
-
-#### `src/cli/`
-
-Handles command-line argument parsing and validation.
-
-**Key modules:**
-- `args.py` - Argument parser using `argparse`
-
-**Key functions:**
-- `parse_args()` - Parse command-line arguments
-- `validate_args()` - Validate cross-flag rules
-
-**CLI Flags:**
-| Flag | Description |
-|------|-------------|
-| `-I, --input` | Input file or directory |
-| `-O, --output` | Output root directory |
-| `-p, --preset` | Preset name |
-| `--backend` | Backend override |
-| `--lossy-action` | What to do with lossy sources |
-| `--force` | Ignore resume history |
-| `--dry-run` | List jobs without converting |
-
----
-
-#### `src/config/`
-
-Loads and validates configuration files.
-
-**Key modules:**
-- `settings_loader.py` - Loads `settings.yaml` into typed dataclasses
-- `preset_loader.py` - Loads `presets.yaml` into `PresetConfig` objects
-
-**Key functions:**
-- `load_settings()` - Parse and validate `settings.yaml`
-- `load_presets()` - Parse and validate `presets.yaml`
-- `get_preset()` - Look up a preset by name
-
-**Configuration schema:**
-
-```yaml
-backend:
-  default: "native_ffmpeg"
-  auto_detect: true
-  native_dbpoweramp:
-    coreconverter_path: "C:\\Program Files\\dBpoweramp\\CoreConverter.exe"
-  wine_dbpoweramp:
-    wine_binary: "wine"
-    wine_prefix: "~/.wine-dbpoweramp"
-    coreconverter_path: "C:\\Program Files\\dBpoweramp\\CoreConverter.exe"
-    winepath_binary: "winepath"
-  native_ffmpeg:
-    ffmpeg_binary: "ffmpeg"
-    flac_binary: "flac"
-    lame_binary: "lame"
-    opusenc_binary: "opusenc"
-
-tools: {}
-
-history:
-  db_path: "conversion_history.db"
-
-execution:
-  default_workers: 4
-  probe_workers: 8
-  worker_model: "thread"
-
-logging:
-  level: "INFO"
+    CLI --> CFG
+    CLI --> SCAN
+    SCAN --> PROBE
+    PROBE --> BUILD
+    BUILD --> EXEC
+    EXEC --> BACK
+    EXEC --> HIST
+    EXEC --> SIDE
+    EXEC --> UI
 ```
 
 ---
 
-#### `src/models/`
+## Component map
 
-Pure dataclass types - no I/O operations.
+### `main.py`
 
-**Key types:**
-- `Backend` (enum) - Backend identifiers
-- `LossyAction` (enum) - Lossy source handling actions
-- `PresetConfig` - Full encoding preset definition
-- `ConversionJob` - A single file to be processed
-- `JobResult` - Result of a ConversionJob
-- `SidecarPolicy` - Sidecar file copy policy
-- `CoverPolicy` - Cover image copy policy
+The single entry point. Orchestrates the full pipeline in the `_main()` function:
 
----
+1. Parse CLI arguments (`parse_args`, `validate_args`)
+2. Load `settings.yaml` and `presets.yaml`
+3. Resolve and validate the backend
+4. Create `tmp/` and the temporary index DB (`tmp/index.db`)
+5. Scan phase (with scan-cache hit/miss path)
+6. Enrichment phase (lossy probe, output path, job type)
+7. Optional lossy gate (abort if lossy files found and `--lossy-action` absent)
+8. Resume pre-filter (check `conversion_history.db`)
+9. Execute jobs via `run_all`
+10. Cleanup: delete `tmp/index.db` on clean exit, preserve on failure/interrupt
 
-#### `src/backends/`
+### `src/config/`
 
-Conversion backend implementations.
+| File | Responsibility |
+|------|----------------|
+| `models.py` | Typed dataclasses mirroring the `settings.yaml` schema |
+| `settings_loader.py` | Parses `settings.yaml` into `Settings` objects; validates required keys |
+| `preset_loader.py` | Parses `presets.yaml` into `PresetConfig` objects |
 
-**Key modules:**
-- `base.py` - Abstract `ConversionBackend` base class
-- `registry.py` - Factory for backend instances with fail-fast validation
-- `native_ffmpeg.py` - FFmpeg-based conversion
-- `wine_dbpoweramp.py` - dBpoweramp via Wine
-- `native_dbpoweramp.py` - Native dBpoweramp on Windows
+### `src/cli/`
 
-**Backend interface:**
+| File | Responsibility |
+|------|----------------|
+| `args.py` | `parse_args()` — `argparse` parser for all CLI flags. `validate_args()` — cross-flag consistency checks (e.g. `--index` + `--build-index` are mutually exclusive). |
 
-```python
-class ConversionBackend(ABC):
-    @abstractmethod
-    def name(self) -> Backend:
-        """Return the backend identifier."""
+### `src/audio/`
 
-    @abstractmethod
-    def validate_environment(self) -> None:
-        """Check that required binaries/paths/prefix exist."""
+Lossy source detection cascade. Each file is evaluated through three tiers in sequence:
 
-    @abstractmethod
-    def supports(self, preset: PresetConfig) -> bool:
-        """Return True iff preset.backends contains this backend's key."""
+| Module | Tier | How it decides |
+|--------|------|----------------|
+| `extensions.py` | 1 — Extension | Unambiguous extensions (`.mp3`, `.aac`, `.ogg`, `.opus` → lossy; `.flac`, `.wav`, `.wv`, `.ape`, `.tta` → lossless). Returns immediately if the extension is in the known list. |
+| `folder_heuristic.py` | 2 — Folder name | Looks for lossy tokens (`mp3`, `aac`, `m4a`, `ogg`, `opus`) in any parent directory name. Handles cases like `~/Music/MP3/track.flac` where the file extension is ambiguous. |
+| `mutagen_probe.py` | 3 — Metadata | Reads the audio stream codec tag via `mutagen`. Called only for ambiguous extensions (`.m4a`, `.mp4`, `.wav`) that tier 1 and 2 could not resolve. |
 
-    @abstractmethod
-    def run(self, job: ConversionJob, stream_callback) -> JobResult:
-        """Execute the conversion and return a JobResult."""
-```
+The cascade is implemented in `cascade.py`. Tiers are tried **per file** — not in three sequential phases — so all worker threads stay busy throughout the probe phase regardless of the workload mix.
 
-**Backend resolution order:**
+### `src/index/`
 
-1. If `--backend NAME` is given on the command line, that wins outright.
-2. Otherwise, if `auto_detect` is enabled and the platform is Windows, and the selected preset has a `native_dbpoweramp` block, use `native_dbpoweramp`.
-3. Otherwise, fall back to `backend.default` from `settings.yaml`.
+| File | Responsibility |
+|------|----------------|
+| `scanner.py` | `_discover_audio_files()` — iterative DFS walk using `os.scandir` (avoids double-stat on Windows). `scan_with_progress()` — walks, collects stats and sidecar candidates, optionally populates the scan cache. Returns `IndexRow` objects. |
+| `scan_cache.py` | A small per-run SQLite snapshot of the scan results. On repeat runs against the same input+excludes, the scan phase loads from this cache instead of walking the filesystem. |
+| `builder.py` | `IndexBuilder` — writes `IndexRow` objects into `tmp/index.db` (the **temp index**), commits, and provides `iter_rows()` and `get_summary()` for consumers. |
+| `cleanup.py` | `cleanup_index()` — deletes `tmp/index.db` on clean exit; preserves it on failure or interrupt so it can be inspected with `sqlite3`. Called from the `finally:` block in `main._main()`. |
 
----
-
-#### `src/index/`
-
-File indexing and scanning.
-
-**Key modules:**
-- `scanner.py` - File tree scanner with optional progress bar
-- `builder.py` - SQLite index database manager
-- `cleanup.py` - Index cleanup utilities
-
-**Key classes:**
-- `IndexRow` - A row in the temp index snapshot
-- `IndexBuilder` - Manages the index_entries SQLite table
-
-**Index schema:**
+**Temp index schema** (`tmp/index.db`):
 
 ```sql
 CREATE TABLE index_entries (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
     source_path  TEXT NOT NULL,
     dest_path    TEXT NOT NULL,
     job_type     TEXT NOT NULL,
     file_size    INTEGER NOT NULL,
     sidecar_files TEXT NOT NULL,
     mtime        REAL NOT NULL,
-    is_lossy     INTEGER,        -- 0/1, NULL = not probed
+    is_lossy     INTEGER,         -- 0 = lossless, 1 = lossy, NULL = not probed
     created_at   TEXT NOT NULL
-)
+);
 ```
 
----
+### `src/jobs/`
 
-#### `src/jobs/`
+| File | Responsibility |
+|------|----------------|
+| `classify.py` | `classify()` — for each `IndexRow`, decides `job_type` (`convert`, `copy`, or `skip`) based on lossy status and the user's `--lossy-action`. Also fills in `dest_path` via `compute_output_path`. |
+| `enrich.py` | `enrich_index_rows()` and `enrich_index_rows_streaming()` — orchestrate the lossy probe across `probe_workers` threads, streaming results back to the caller so `IndexBuilder` can write rows in real time. |
+| `build_jobs.py` | `build_jobs()` — converts enriched `IndexRow` objects into `ConversionJob` namedtuples, applying the resume pre-filter against `conversion_history.db`. |
 
-Job list building from discovered audio files.
+### `src/backends/`
 
-**Key modules:**
-- `builder.py` - Build ConversionJob lists with streaming probe
+Abstract base class + three concrete implementations:
 
-**Key functions:**
-- `enrich_index_rows_streaming()` - Stream-probe files with live progress
-- `enrich_index_rows()` - Blocking convenience wrapper
-- `build_jobs()` - Build ConversionJob list from discovered files
-
-**Job types:**
-| Job Type | Description |
-|----------|-------------|
-| `convert` | Transcode the source file |
-| `copy` | Copy the source file as-is |
-| `skip` | Skip the source file |
-
----
-
-#### `src/execution/`
-
-Conversion execution with thread/process pools.
-
-**Key modules:**
-- `runner.py` - Execute ConversionJob lists using the configured backend
-- `run_all.py` - Top-level orchestrator with thread/process pool dispatch
-- `run_job.py` - Single-job execution (copy/convert/skip branches)
-- `event_drain.py` - Drain worker events into the UI
-- `events.py` - Event queue construction and stream callback helpers
-
-**Key functions:**
-- `run_all()` - Execute jobs using thread or process pool
-- `run_job()` - Execute a single ConversionJob
-- `_drain_events_into_ui()` - Drain queued events to update UI
-- `_run_event_drain_thread()` - Background thread for continuous event draining
-
-**Event system:**
-
-Workers push events onto a shared queue:
-- `STARTED` - Job has begun
-- `FINISHED` - Job has completed
-- `LOG` - Verbose log line
-- `ACTIVITY` - Current activity (copy/convert)
-
-A background drain thread continuously processes these events and updates the UI.
-The drain thread runs at 20ms poll intervals, providing real-time progress updates.
-Workers send events via a cross-process/thread-safe queue (threading.Queue for thread model, multiprocessing.Manager().Queue() for process model).
-
----
-
-#### `src/history/`
-
-Conversion history database with async write support.
-
-**Key modules:**
-- `conversion_db.py` - Synchronous wrapper for history tracking
-- `write_queue.py` - Async writer thread for conversion history
-- `schema.py` - Shared history-table schema and pragmas
-
-**Key classes:**
-- `ConversionDB` - Wraps SQLite connection for history tracking (synchronous)
-- `DBWriteQueue` - Async writer thread for conversion history (background writes)
-- `ConversionLogEntry` - Dataclass for queued log entries
-
-**Key methods:**
-- `get_record()` - Get history record by source/dest
-- `log_conversion()` - Insert or update a history row
-- `should_skip()` - Check if a job should be skipped based on history
-- `DBWriteQueue.log_conversion()` - Queue a log entry for async writing
-- `DBWriteQueue.flush()` - Signal writer to shut down and wait
-
-**Resume semantics:**
-
-A job is skippable only if:
-1. A matching (source_path, dest_path, job_type) row exists
-2. The status is 'SUCCESS'
-3. The destination file still exists on disk
-4. (Optional) The stored file size matches the current file size
-
-**SQLite features:**
-- WAL mode for concurrent write access
-- 5-second busy timeout
-- UNIQUE constraint on (source_path, dest_path)
-- Async write queue eliminates concurrent write contention
-- `file_size` column tracks output file size for change detection
-
----
-
-#### `src/audio/`
-
-Audio inspection and lossy detection.
-
-**Key modules:**
-- `inspector.py` - Multi-tier lossy detection
-
-**Detection cascade:**
-
-1. **Extension lookup** (Tier 1) - Zero I/O, deterministic
-   - Unambiguous lossless: `.flac`, `.ape`, `.wv`, `.wav`, etc.
-   - Unambiguous lossy: `.mp3`, `.ogg`, `.opus`, `.wma`, etc.
-   - Ambiguous: `.m4a`, `.mp4`, `.caf` (need Tier 3)
-
-2. **Folder-name heuristic** (Tier 2) - Zero I/O
-   - Looks for lossy tokens in parent directory names
-   - Tokens: `aac`, `mp3`, `v0`, `128k`, `lame`, `vorbis`, `opus`, `webrip`, `itunes`, `amazon`, `deezer`, `spotify`, etc.
-
-3. **Mutagen metadata probe** (Tier 3) - I/O required
-   - Only for ambiguous extensions
-   - Checks codec name in metadata
-   - Runs in thread pool for parallel probing
-
----
-
-#### `src/pathing/`
-
-Path resolution and transformation.
-
-**Key modules:**
-- `resolver.py` - Path resolution logic
-
-**Key functions:**
-- `compute_output_path()` - Compute output path for input file
-- `validate_source_path()` - Validate source_path is ancestor of input_path
-- `to_wine_path()` - Translate Linux path to Windows path via winepath
-- `hide_filename()` - Prefix filename with dot to hide it
-
----
-
-#### `src/sidecars/`
-
-Sidecar file management.
-
-**Key modules:**
-- `manager.py` - Copy lyrics and cover art alongside converted files
-
-**Key functions:**
-- `copy_lyrics()` - Copy lyric/text files next to output
-- `copy_covers()` - Copy cover art to output directory
-
-**Sidecar patterns:**
-
-Lyrics: `.lrc`, `.txt` (configurable)
-Covers: `cover.jpg`, `cover.png`, `folder.jpg`, `albumart.jpg` (configurable)
-
----
-
-#### `src/ui/`
-
-User interface components.
-
-**Key modules:**
-- `progress_view.py` - Legacy progress view (re-exported for compatibility)
-- `progress/renderer.py` - Self-contained progress-bar renderer
-- `progress/rich_sink.py` - RichProgressSink backed by rich.live.Live
-- `progress/protocol.py` - ProgressSink protocol and SubtaskID
-
-**Key classes:**
-- `RichProgressSink` - Concrete ProgressSink backed by rich.live.Live
-- `_ProgressRenderer` - Self-contained progress-bar renderer
-- `_BarState` - Lightweight mutable state for one progress bar
-- `SubtaskID` - Opaque wrapper for per-job bar identifier
-- `NullProgressSink` - No-op sink for verbose mode (no progress bar)
-- `VerboseProgressSink` - Verbose sink that logs to stdout
-
-**Display layout:**
-
-```
-[PhaseName N/M files]  ████████░░░░░░░░  83%  ETA 0:32  1.2 GiB
-  converting
-[dim]log message 1[/dim]
-[dim]log message 2[/dim]
-...
+```mermaid
+classDiagram
+    direction LR
+    class ConversionBackend {
+        <<abstract>>
+        +convert(job, preset, stream_cb, events)
+        +copy(infile, outfile, stream_cb, events)
+        +verify(outfile) bool
+        +supports(preset) bool
+        +validate_environment()
+    }
+    class NativeFfmpegBackend { }
+    class NativeDbpowerampBackend { }
+    class WineDbpowerampBackend { }
+    ConversionBackend <|-- NativeFfmpegBackend
+    ConversionBackend <|-- NativeDbpowerampBackend
+    ConversionBackend <|-- WineDbpowerampBackend
 ```
 
-**Progress bar features:**
-- Master bar shows overall progress with ETA
-- Per-job indeterminate bars for active conversions
-- Throttled refresh at ~20Hz to prevent terminal flooding
-- Max visible per-job bars capped to prevent terminal overflow
-- Supports byte-based and count-based progress modes
+- **`base.py`** — `ConversionBackend` ABC. Defines `convert()`, `copy()`, `verify()`, `supports()`, and `validate_environment()`. The `validate_environment()` call is made **fail-fast** at startup (before any file is touched): missing binaries or Wine prefix raise `BackendError` immediately.
+- **`registry.py`** — `get_backend()`, `detect_backend_for_run()`, `resolve_backend_for_run()`. Picks the backend using this priority: CLI override (`--backend`) > auto-detect (Windows + dBpoweramp installed + preset supports it) > `backend.default` in `settings.yaml`.
+- **`native_ffmpeg.py`** — invokes `ffmpeg` / `flac` / `lame` / `opusenc` directly.
+- **`native_dbpoweramp.py`** — invokes `CoreConverter.exe` directly (Windows only).
+- **`wine_dbpoweramp.py`** — translates paths via `winepath -w` before invoking `CoreConverter.exe` via `wine`.
+
+### `src/execution/`
+
+| File | Responsibility |
+|------|----------------|
+| `run_job.py` | `run_job()` — single-job worker. Dispatches to `backend.convert()`, `backend.copy()`, or a no-op for `skip` jobs. Calls `backend.verify()` before marking SUCCESS. Pushes log lines to the event queue. |
+| `run_all.py` | `run_all()` — top-level orchestrator. Creates a `ThreadPoolExecutor` or `ProcessPoolExecutor`, submits all jobs, starts the event-drain thread, and returns a summary. |
+| `events.py` | `JobEventKind` enum (`LOG`, `STARTED`, `FINISHED`) and helpers `_make_event_queue()`, `_build_stream_callback()`, `_push_log_event()`. |
+| `event_drain.py` | `_drain_events_into_ui()` and `_run_event_drain_thread()` — background thread that reads from the event queue and forwards log lines to the progress sink. Runs for the duration of `run_all()` so Rich is never called from a worker thread. |
+
+### `src/history/`
+
+| File | Responsibility |
+|------|----------------|
+| `schema.py` | Shared `CREATE TABLE` and PRAGMA statements for both the history DB and the scan cache DB. Both use WAL mode and a 5-second busy timeout. |
+| `conversion_db.py` | `ConversionDB` — synchronous read/write wrapper around `conversion_history.db`. `should_skip()` checks source+dest+job_type and file size to decide whether to skip a job on resume. |
+| `write_queue.py` | `DBWriteQueue` — async writer. Workers push log entries to a `queue.Queue`; a dedicated background thread drains them and writes to the DB. Eliminates concurrent write contention. Callers must call `flush()` before exit. |
+
+### `src/sidecars/`
+
+| File | Responsibility |
+|------|----------------|
+| `manager.py` | `SidecarManager` — reads the `sidecars` block from the preset. `_copy_sidecars()` copies lyric files (`.lrc`, `.txt`) and cover art (`.jpg`, `.png`) from each source file's directory to its destination, optionally renaming covers to dot-prefix (`.cover.jpg`) for privacy. |
+
+### `src/ui/`
+
+| File | Responsibility |
+|------|----------------|
+| `progress_view.py` | `ProgressSink` ABC and three concrete implementations: `RichProgressSink` (live progress bar with byte counter), `VerboseProgressSink` (plain terminal output), `NullProgressSink` (no-op). |
+| `progress/protocol.py` | `ProgressSink` protocol definition. |
+| `progress/renderer.py` | `RichProgressRenderer` — constructs the Rich `Progress` object with columns: task name, progress bar, file count, byte counter. |
+| `progress/rich_sink.py` | `RichProgressSink` implementation. Manages phase transitions (`start_phase`, `stop_phase`, `advance`, `log_file`) and subtask bars for per-file live output. |
+| `progress/verbose_sink.py` | `VerboseProgressSink` implementation. Plain `print()` calls with phase headers. |
+| `progress/null_sink.py` | `NullProgressSink` — all methods are no-ops. Used in `--verbose` mode when no progress bar is desired. |
 
 ---
 
-## Data Flow
-
-### Normal Conversion Run
+## Data flow: scan to conversion
 
 ```
-1. Parse CLI args ──────────────────────────────────────────────────────────────
-   │
-   ▼
-2. Load config files (settings.yaml, presets.yaml)
-   │
-   ▼
-3. Resolve backend (auto-detect or CLI override)
-   │
-   ▼
-4. Validate backend environment (fail-fast)
-   │
-   ▼
-5. Create tmp/index.db
-   │
-   ▼
-6. Scan phase ──────────────────────────────────────────────────────────────────
-   │  Discovers audio files, collects stats and sidecar candidates
-   ▼
-7. Probe phase ─────────────────────────────────────────────────────────────────
-   │  Multi-tier lossy detection (extension, folder heuristic, mutagen)
-   │  Writes results to index DB incrementally
-   ▼
-8. Lossy gate ─────────────────────────────────────────────────────────────────
-   │  If lossy files found and no --lossy-action: abort
-   ▼
-9. Build ConversionJob list from index
-   │
-   ▼
-10. Execute phase ────────────────────────────────────────────────────────────────
-    │  Thread/process pool executes jobs
-    │  Each job: verify output, copy sidecars, log to history
+Input directory
+    │
+    │  _discover_audio_files()
+    │  (os.scandir iterative DFS, excludes matched on dir basename)
+    │
     ▼
-11. Cleanup phase ────────────────────────────────────────────────────────────────
-       Delete tmp/index.db on success
-       Preserve tmp/index.db on failure/interrupt
-```
-
-### Index-Only Mode (`--build-index`)
-
-```
-1-4. Same as above
-   │
-   ▼
-5. Scan + probe phases (same as above)
-   │
-   ▼
-6. Write all rows to user-specified index DB
-   │
-   ▼
-7. Print summary and exit
-```
-
-### Index-Run Mode (`--index`)
-
-```
-1-4. Same as above
-   │
-   ▼
-5. Open pre-built index DB
-   │
-   ▼
-6. Build ConversionJob list from index rows
-   │
-   ▼
-7-10. Same execute + cleanup phases as above
+List[ (Path, size, mtime) ]
+    │
+    │  scan_with_progress()
+    │  (collects sidecar basenames, writes to ScanCache if enabled)
+    │
+    ▼
+List[IndexRow]  ──────► ScanCache (tmp/scan_cache_*.db)
+    │                        (reused on next run to skip dir walk)
+    │
+    │  enrich_index_rows_streaming()
+    │  (lossy cascade per file, dest_path, job_type, writes to...)
+    │
+    ▼
+tmp/index.db  (IndexBuilder)
+    │
+    │  IndexBuilder.iter_rows()
+    │  (re-read from SQLite as the single source of truth)
+    │
+    ▼
+List[IndexRow]  ──────► ConversionDB.should_skip()
+    │                        (resume pre-filter: checks history + file size)
+    │
+    ▼
+List[ConversionJob]
+    │
+    │  run_all() → Thread/ProcessPoolExecutor
+    │
+    ├─► backend.convert()  →  output file  →  backend.verify()  →  DBWriteQueue (async write)
+    ├─► backend.copy()
+    └─► (skip — no-op)
 ```
 
 ---
 
-## Concurrency Model
+## Concurrency model
 
-### Thread Pool (default)
-- Uses `ThreadPoolExecutor` from `concurrent.futures`
-- Workers share memory space
-- Suitable for I/O-bound tasks like audio conversion
-- SQLite connection per worker (WAL mode handles concurrent access)
+### Thread pool (default)
 
-### Process Pool
-- Uses `ProcessPoolExecutor` for CPU isolation
-- Each worker gets a copy of arguments
-- Uses `multiprocessing.Manager` for cross-process event queue
-- Better for CPU-bound conversion work
+`worker_model: "thread"` uses a `ThreadPoolExecutor`. All conversion backends (`native_ffmpeg`, `native_dbpoweramp`, `wine_dbpoweramp`) are subprocess-based — they invoke an external binary — so the GIL is not a bottleneck. Threads are appropriate for I/O-bound work.
 
-### Event Queue
-- Workers push events: `STARTED`, `FINISHED`, `LOG`, `ACTIVITY`
-- A background drain thread continuously processes events
-- UI updates happen only in the main thread
-- Prevents rich rendering issues from concurrent access
+### Process pool
 
-### Async History Writes
-- Workers push log entries to a `DBWriteQueue`
-- A single background writer thread drains the queue and writes to SQLite
-- Eliminates all concurrent write contention
-- Supports both threading.Queue (thread model) and multiprocessing.Manager().Queue() (process model)
-- Caller must call `flush()` after all jobs complete to ensure writes finish
+`worker_model: "process"` uses a `ProcessPoolExecutor`. Required when the Python process must be isolated from the workers, or when the backend is CPU-bound (not the case here, but available for future backends).
+
+### Event queue (never touch Rich from a worker)
+
+Workers cannot call Rich directly (it is not thread-safe from outside the main thread). Instead, each worker pushes `(JobEventKind, payload)` tuples onto a `queue.Queue`. A single background drain thread reads from the queue and forwards log lines to the progress sink. This means every worker thread stays productive — there is no synchronization bottleneck at the UI layer.
+
+### Async history writes
+
+`DBWriteQueue` uses the same producer/queue/consumer pattern: workers push log records, and a dedicated thread writes them to `conversion_history.db`. Without this, concurrent workers writing to the same SQLite file would generate `SQLITE_BUSY` errors. WAL mode + a 5-second busy timeout mitigate this at the DB level, but the queue eliminates contention entirely.
+
+### Probe phase parallelism
+
+The lossy probe runs in a separate thread pool (`probe_workers`, default 16). Each probe thread walks its assigned file through the cascade independently, so a file that needs mutagen (Tier 3) does not stall files that resolved via extension (Tier 1). Results are streamed back to the main thread as they arrive.
 
 ---
 
-## Error Handling
+## Three database files
 
-### Fail-Fast Validation
-Backend environment is validated immediately on instantiation:
-- `NativeFfmpegBackend`: Checks `ffmpeg` binary exists
-- `WineDbpowerampBackend`: Checks `wine`, `winepath`, prefix exists, runs smoke test
-- `NativeDbpowerampBackend`: Checks `CoreConverter.exe` exists
-
-### Probe Errors
-- Mutagen probe failures are caught and treated as "unknown codec"
-- Files with unknown codec are treated as lossless
-- The conversion backend surfaces the real error during transcoding
-
-### Output Verification
-- After every conversion/copy, the output file is verified to exist with non-zero size
-- If verification fails, the job is marked as FAILED even if the tool exited 0
-
-### Signal Handling
-- SIGINT and SIGTERM handlers mark the run as interrupted
-- The index database is preserved for post-mortem debugging
-- Original signal handlers are restored in the `finally` block
+| Database | Location | When created | When deleted |
+|----------|----------|-------------|-------------|
+| `tmp/index.db` | `tmp/index.db` | Every run (before lossy gate) | Deleted on clean exit; preserved on failure or interrupt |
+| `tmp/scan_cache_*.db` | `tmp/` | On every run that walks the directory | Never (reused on next run against same input+excludes) |
+| `conversion_history.db` | From `settings.yaml` (default: project root) | On first conversion | Never |
 
 ---
 
-## Extension Points
+## Backend abstraction
 
-### Adding a New Backend
+The `ConversionBackend` ABC enforces a clean contract. Each backend:
 
-1. Create a new class in `src/backends/` extending `ConversionBackend`
-2. Implement the four abstract methods: `name()`, `validate_environment()`, `supports()`, `run()`
-3. Add the backend to the registry in `src/backends/registry.py`
-4. Add to `Backend` enum in `src/models/types.py`
+1. **Validates its environment** at instantiation (`validate_environment()`) — fail-fast, before any file is touched. Missing binaries or Wine prefix raise immediately.
+2. **Declares preset compatibility** via `supports(preset)` — checked at startup before any work begins.
+3. **Implements `convert()`** and `copy()`** using the same calling convention, so the executor is backend-agnostic.
+4. **Implements `verify()`** — checks output file exists and is non-zero size. This guards against silent failures where the external tool exits 0 but produced nothing.
 
-### Adding a New Preset
-
-1. Add a new entry to `presets.yaml` under the `presets:` key
-2. Specify the output extension, backend configurations, and sidecar policies
-3. The preset will be automatically loaded on next run
-
-### Adding a New Lossy Detection Tier
-
-1. Add a new tier function in `src/audio/inspector.py`
-2. Update `is_lossy()` and related functions to call the new tier
-3. Consider adding folder-name tokens to `LOSSY_FOLDER_TOKENS` for zero-I/O detection
-
----
-
-## File Structure
-
-```
-wrapper-dbpoweramp/
-├── main.py                    # Entry point and orchestrator
-├── settings.yaml              # Application configuration
-├── presets.yaml              # Encoding preset definitions
-├── requirements.txt          # Python dependencies
-├── pyproject.toml            # Project metadata
-├── src/
-│   ├── __init__.py
-│   ├── exceptions.py         # Custom exception classes
-│   ├── audio/
-│   │   ├── __init__.py
-│   │   └── inspector.py      # Multi-tier lossy detection
-│   ├── backends/
-│   │   ├── __init__.py
-│   │   ├── base.py           # ConversionBackend ABC
-│   │   ├── registry.py       # Backend factory
-│   │   ├── native_ffmpeg.py  # FFmpeg backend
-│   │   ├── native_dbpoweramp.py  # Native dBpoweramp backend
-│   │   └── wine_dbpoweramp.py    # Wine dBpoweramp backend
-│   ├── cli/
-│   │   ├── __init__.py
-│   │   └── args.py           # Argument parsing
-│   ├── config/
-│   │   ├── __init__.py
-│   │   ├── settings_loader.py # settings.yaml loader
-│   │   └── preset_loader.py  # presets.yaml loader
-│   ├── execution/
-│   │   ├── __init__.py
-│   │   ├── runner.py         # Job execution (main entry)
-│   │   ├── run_all.py        # Top-level pool orchestrator
-│   │   ├── run_job.py        # Single-job execution
-│   │   ├── event_drain.py    # UI event draining
-│   │   └── events.py         # Event queue construction
-│   ├── history/
-│   │   ├── __init__.py
-│   │   ├── conversion_db.py   # Synchronous history wrapper
-│   │   ├── write_queue.py    # Async writer thread
-│   │   └── schema.py         # Shared schema and pragmas
-│   ├── index/
-│   │   ├── __init__.py
-│   │   ├── scanner.py        # File scanning
-│   │   ├── builder.py       # Index DB manager
-│   │   ├── cleanup.py        # Index cleanup
-│   │   └── scan_cache.py     # Scan cache for probe optimization
-│   ├── jobs/
-│   │   ├── __init__.py
-│   │   ├── builder.py        # Job list building
-│   │   ├── enrich.py          # Stream-probe for lossy detection
-│   │   └── classify.py       # Job type classification
-│   ├── models/
-│   │   ├── __init__.py
-│   │   └── types.py          # Dataclass types
-│   ├── pathing/
-│   │   ├── __init__.py
-│   │   └── resolver.py       # Path resolution
-│   ├── sidecars/
-│   │   ├── __init__.py
-│   │   └── manager.py        # Sidecar file copying
-│   └── ui/
-│       ├── __init__.py
-│       ├── progress_view.py  # Progress sink exports
-│       └── progress/
-│           ├── __init__.py
-│           ├── protocol.py   # ProgressSink protocol
-│           ├── renderer.py   # Progress bar renderer
-│           └── rich_sink.py  # Rich progress implementation
-├── tests/
-│   ├── __init__.py
-│   ├── conftest.py           # Pytest configuration
-│   ├── test_lossy_classify.py
-│   ├── test_conversion_db.py
-│   ├── test_index_builder.py
-│   ├── test_mutagen_probe.py
-│   └── test_progress_view.py
-└── docs/                     # This documentation
-```
+The registry (`registry.py`) owns backend selection logic. It is the only module that knows about all three backends; the rest of the system imports only the ABC.

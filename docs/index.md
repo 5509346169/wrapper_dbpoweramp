@@ -7,8 +7,8 @@ A comprehensive CLI tool that wraps **dBpoweramp CoreConverter.exe** (via Wine) 
 ## Table of Contents
 
 ### Getting Started
-- [Overview](overview.md) - Project purpose and key features (coming soon)
-- [Installation](installation.md) - How to install dependencies on Linux and Windows (coming soon)
+- [Overview](overview.md) - Project purpose and key features
+- [Installation](installation.md) - How to install dependencies on Linux and Windows
 
 ### Configuration
 - [Configuration Reference](configuration.md) - Complete `settings.yaml` reference with all options explained
@@ -38,8 +38,11 @@ A comprehensive CLI tool that wraps **dBpoweramp CoreConverter.exe** (via Wine) 
 ## Quick Start
 
 ```sh
-# Convert a folder using FFmpeg (default)
+# Convert a folder using dBpoweramp (default on Windows with auto-detection)
 python main.py -I ~/Music -O ~/Converted -p flac-lossless
+
+# Convert using FFmpeg (explicit)
+python main.py -I ~/Music -O ~/Converted -p flac-lossless --backend native_ffmpeg
 
 # Convert using dBpoweramp via Wine
 python main.py -I ~/Music -O ~/Converted -p qaac-cvbr-256 --backend wine_dbpoweramp

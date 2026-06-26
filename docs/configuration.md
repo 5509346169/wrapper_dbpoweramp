@@ -22,7 +22,7 @@ The file is loaded and validated by `src/config/settings_loader.py` on startup.
 
 ```yaml
 backend:
-  default: "native_ffmpeg"        # Backend used when no --backend flag is passed
+  default: "native_dbpoweramp"   # Backend used when no --backend flag is passed
   auto_detect: true               # Auto-detect Windows vs Wine environment
   native_dbpoweramp:
     coreconverter_path: "C:\\Program Files\\dBpoweramp\\CoreConverter.exe"
@@ -63,14 +63,14 @@ Top-level backend configuration.
 #### `backend.default`
 
 **Type:** String (enum)  
-**Default:** `"native_ffmpeg"`  
+**Default:** `"native_dbpoweramp"`  
 **Valid values:** `"native_ffmpeg"`, `"wine_dbpoweramp"`, `"native_dbpoweramp"`
 
 The backend used when no `--backend` flag is passed on the command line.
 
 ```yaml
 backend:
-  default: "native_ffmpeg"
+  default: "native_dbpoweramp"
 ```
 
 ---
@@ -324,7 +324,7 @@ python main.py -I ~/Music -O ~/Converted -p flac-lossless -w 8
 #### `execution.probe_workers`
 
 **Type:** Integer  
-**Default:** `8`
+**Default:** `16`
 
 Number of parallel workers for mutagen probe pre-flight (I/O bound, can be higher than conversion workers).
 
@@ -422,7 +422,7 @@ The settings loader (`src/config/settings_loader.py`) performs validation on loa
 
 ```yaml
 backend:
-  default: "native_ffmpeg"
+  default: "native_dbpoweramp"
   auto_detect: false
   wine_dbpoweramp:
     wine_binary: "wine"
@@ -484,7 +484,7 @@ logging:
 
 ```yaml
 backend:
-  default: "native_ffmpeg"
+  default: "native_dbpoweramp"
   auto_detect: false
   native_dbpoweramp:
     coreconverter_path: "C:\\Program Files\\dBpoweramp\\CoreConverter.exe"

@@ -51,3 +51,6 @@ plans/
 *.db-journal
 *.db-shm
 *.db-wal
+
+# MkDocs build output
+site/

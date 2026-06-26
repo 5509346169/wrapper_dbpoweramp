@@ -307,7 +307,7 @@ The tool works out of the box with default settings. You may want to customize:
 
 ```yaml
 backend:
-  default: "native_ffmpeg"
+  default: "native_dbpoweramp"
   auto_detect: true
   native_dbpoweramp:
     coreconverter_path: "C:\\Program Files\\dBpoweramp\\CoreConverter.exe"
