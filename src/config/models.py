@@ -58,11 +58,12 @@ class HistoryConfig:
 
 @dataclass
 class ExecutionConfig:
-    """Execution pool settings: worker count and model."""
+    """Execution pool settings: worker count, model, and phase mode."""
 
     default_workers: int
     probe_workers: int
     worker_model: str
+    execution_mode: str
 
 
 @dataclass

@@ -24,6 +24,7 @@ execution:
   default_workers: 4               # conversion pool size
   probe_workers: 16                # mutagen probe pool size (pure I/O, can be higher)
   worker_model: "thread"           # "thread" | "process"
+  execution_mode: "hybrid"         # "hybrid" | "phased" (phased = skip → copy → convert)
 
 logging:
   level: "INFO"                    # DEBUG | INFO | WARNING | ERROR

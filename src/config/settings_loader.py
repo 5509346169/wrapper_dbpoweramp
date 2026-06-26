@@ -45,6 +45,7 @@ __all__ = [
 _VALID_BACKENDS = {"wine_dbpoweramp", "native_dbpoweramp", "native_ffmpeg"}
 _VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR"}
 _VALID_WORKER_MODELS = {"thread", "process"}
+_VALID_EXECUTION_MODES = {"hybrid", "phased"}
 
 
 def _raise(msg: str) -> None:
@@ -168,6 +169,7 @@ def load_settings(path: Path | str) -> Settings:
         default_workers=_int(exec_data, "default_workers", "execution.default_workers"),
         probe_workers=_int(exec_data, "probe_workers", "execution.probe_workers"),
         worker_model=_str_enum(exec_data, "worker_model", "execution.worker_model", _VALID_WORKER_MODELS),
+        execution_mode=_str_enum(exec_data, "execution_mode", "execution.execution_mode", _VALID_EXECUTION_MODES),
     )
 
     # -- logging --

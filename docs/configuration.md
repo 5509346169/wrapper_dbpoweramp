@@ -46,6 +46,7 @@ execution:
   default_workers: 4
   probe_workers: 16
   worker_model: "thread"
+  execution_mode: "hybrid"
 
 logging:
   level: "INFO"
@@ -358,6 +359,30 @@ python main.py -I ~/Music -O ~/Converted -p flac-lossless --worker-model process
 
 ---
 
+#### `execution.execution_mode`
+
+**Type:** String (enum)  
+**Default:** `"hybrid"`
+
+Execution mode for job scheduling.
+
+| Value | Description |
+|-------|-------------|
+| `"hybrid"` | Files are processed in whatever order the pool schedules them, mixing skip/copy/convert arbitrarily (default, unchanged behaviour) |
+| `"phased"` | Files run in three sequential phases in strict order: skip jobs first, then copy jobs, then convert jobs |
+
+```yaml
+execution:
+  execution_mode: "phased"
+```
+
+**Override via CLI:**
+```sh
+python main.py -I ~/Music -O ~/Converted -p flac-lossless --execution-mode phased
+```
+
+---
+
 ### `logging`
 
 Configuration for logging output.
@@ -417,6 +442,7 @@ execution:
   default_workers: 4
   probe_workers: 16
   worker_model: "thread"
+  execution_mode: "hybrid"
 
 logging:
   level: "INFO"
@@ -448,6 +474,7 @@ execution:
   default_workers: 4
   probe_workers: 16
   worker_model: "thread"
+  execution_mode: "hybrid"
 
 logging:
   level: "INFO"
@@ -479,6 +506,7 @@ execution:
   default_workers: 8
   probe_workers: 16
   worker_model: "process"
+  execution_mode: "hybrid"
 
 logging:
   level: "WARNING"

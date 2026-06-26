@@ -303,7 +303,7 @@ def _run_from_index(
 
         workers = args.workers if args.workers is not None else settings.execution.default_workers
         worker_model = args.worker_model if args.worker_model is not None else settings.execution.worker_model
-        execution_mode = getattr(args, "execution_mode", "hybrid")
+        execution_mode = getattr(args, "execution_mode", None) or settings.execution.execution_mode
 
         # Pre-filter: identify already-converted files before starting any progress bar.
         pending_jobs: list[ConversionJob] = []
@@ -744,7 +744,7 @@ def _main() -> None:
 
         # 11b. --dry-run: print job list and exit
         if args.dry_run:
-            execution_mode = getattr(args, "execution_mode", "hybrid")
+            execution_mode = getattr(args, "execution_mode", None) or settings.execution.execution_mode
             phases = _run_jobs_by_phase(jobs, execution_mode)
             print("Dry run — jobs that would be executed:")
             print()
@@ -772,7 +772,7 @@ def _main() -> None:
 
         workers = args.workers if args.workers is not None else settings.execution.default_workers
         worker_model = args.worker_model if args.worker_model is not None else settings.execution.worker_model
-        execution_mode = getattr(args, "execution_mode", "hybrid")
+        execution_mode = getattr(args, "execution_mode", None) or settings.execution.execution_mode
 
         # Pre-filter: identify already-converted files before starting any progress bar.
         pending_jobs: list[ConversionJob] = []
