@@ -37,8 +37,9 @@ See `docs/` for comprehensive documentation covering architecture, configuration
 - **Lossy source handling**: Detect, skip, copy, or transcode lossy audio sources
 - **Sidecar preservation**: Automatically copies lyrics and cover art
 - **Resume support**: Skips already-converted files, handles interruptions gracefully
-- **SQLite reliability**: WAL mode with busy timeout for safe concurrent database access
+- **SQLite reliability**: WAL mode with busy timeout and async writes for safe concurrent database access
 - **Output verification**: Validates output files before marking conversions as successful
+- **Scan cache**: Reuses previous scan results to skip directory walks on repeat runs
 
 ---
 
@@ -181,6 +182,8 @@ python main.py -I ~/Music -O ~/Converted -p flac-lossless -v
 | `--force` | no | Ignore resume history, reconvert everything |
 | `--dry-run` | no | Build and print job list without converting |
 | `--list-lossy` | no | Scan and print lossy files, then exit |
+| `--build-index PATH` | no | Build index to file and exit |
+| `--index PATH` | no | Use pre-built index |
 
 ---
 
@@ -216,16 +219,24 @@ everything.
 The history table tracks `job_type` (`convert` / `copy`) — a file previously copied as-is
 under a `copy` policy is not skipped if you re-run with a `convert` policy.
 
+History writes use an async queue pattern: workers push log entries to a background writer
+thread, eliminating concurrent write contention. The caller must call `flush()` to ensure
+all writes complete before cleanup.
+
 ### Reliability features
 
 The wrapper includes safeguards to ensure conversions produce valid output:
 
 - **WAL mode**: SQLite uses Write-Ahead Logging for safe concurrent access from multiple
   worker threads, with a 5-second busy timeout to handle contention gracefully.
+- **Async writes**: History logging is queued and written by a dedicated thread, preventing
+  concurrent write contention between workers.
 - **Output verification**: After every conversion or copy, the wrapper verifies the output
   file exists and has non-zero size before marking the job as SUCCESS. If verification
   fails, the job is logged as FAILED with an error message — even if the external tool
   reported exit code 0.
+- **File size tracking**: The stored output file size is compared on resume; if the size
+  differs from the stored value, the file is reconverted.
 
 ---
 
@@ -246,10 +257,15 @@ conversion step: after the scan, rows are enriched with `dest_path`, `job_type`,
 `is_lossy`, written to SQLite, and then read back to build the `ConversionJob` list that
 feeds the converter.
 
-This means:
-- The index is not merely a post-mortem artifact — it is the working set.
-- `is_lossy` (ffprobe's codec classification) is persisted per row so a future resume
-  mechanism can skip the re-probe pass for already-probed files.
+### Scan cache
+
+The wrapper maintains a **scan cache** in `tmp/` that stores the results of directory
+scans. On repeat runs against the same input and excludes, the cache is reused to skip
+the directory walk entirely — only the probe phase (lossy detection) runs from scratch.
+The cache is keyed by input path and excludes list, so different input directories or
+different exclude patterns create new cache entries.
+
+Disable with `--no-scan-cache` to force a fresh scan every run.
 
 ### Index cleanup
 

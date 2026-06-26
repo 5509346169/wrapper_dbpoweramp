@@ -272,17 +272,28 @@ jobs = [_row_to_job(r) for r in source_rows]
 ### 5.3 Execute Jobs
 
 ```python
-summary, futures, events = run_all(
+summary, futures, events, write_queue = run_all(
     jobs=jobs,
     backend=backend,
-    db=db,
+    db_path=str(db_path),
     force=args.force,
     workers=workers,
     worker_model=worker_model,
     verbose=args.verbose,
     progress=sink,
+    print_to_terminal=args.verbose,
 )
 ```
+
+**Execution flow:**
+
+1. `run_all()` creates a `DBWriteQueue` for async history writes
+2. A background drain thread starts to continuously process UI events
+3. Workers submit jobs to the thread/process pool
+4. Each worker:
+   - Opens its own `ConversionDB` connection for resume checks
+   - Pushes events (STARTED, ACTIVITY, FINISHED) to the shared queue
+   - For conversions/copies, queues history logs via `DBWriteQueue`
 
 **For each job:**
 
@@ -292,19 +303,26 @@ summary, futures, events = run_all(
    - Copy file with metadata
    - Verify output
    - Copy sidecars (lyrics, covers)
-   - Log to history
+   - Queue history log via `DBWriteQueue`
 3. **Convert jobs**:
    - Check resume eligibility
    - Create output directory
    - Run backend conversion
    - Verify output
    - Copy sidecars
-   - Log to history
+   - Queue history log via `DBWriteQueue`
 
 ### 5.4 Resume Check
 
 ```python
-if not force and db.should_skip(source, dest, job_type, dest_exists):
+dest_exists = job.outfile.exists()
+dest_size = job.outfile.stat().st_size if dest_exists else None
+if not force and db.should_skip(
+    str(job.infile), str(job.outfile),
+    job_type=job.job_type,
+    dest_file_exists=dest_exists,
+    dest_file_size=dest_size,
+):
     status = "SKIPPED"
 ```
 
@@ -312,6 +330,7 @@ if not force and db.should_skip(source, dest, job_type, dest_exists):
 - History record exists with matching source, dest, job_type
 - Status is "SUCCESS"
 - Destination file still exists
+- (Optional) Stored file size matches current file size
 
 ### 5.5 Output Verification
 
@@ -345,7 +364,15 @@ copy_covers(infile, outfile, preset.covers)
 Done.  Success: 42  Skipped: 3  Failed: 1
 ```
 
-### 6.2 Cleanup Index
+### 6.2 Flush History Writes
+
+```python
+write_queue.flush()
+```
+
+Ensures all pending history logs are written to SQLite before cleanup.
+
+### 6.3 Cleanup Index
 
 ```python
 cleanup_index(
@@ -365,7 +392,7 @@ cleanup_index(
 | Exception occurred | Preserve `tmp/index.db` |
 | Interrupted (Ctrl+C/SIGTERM) | Preserve `tmp/index.db` |
 
-### 6.3 Restore Signal Handlers
+### 6.4 Restore Signal Handlers
 
 ```python
 signal.signal(signal.SIGINT, old_sigint)
@@ -459,6 +486,7 @@ The `finally` block ensures:
 ```python
 if workers == 1:
     for future in as_completed(futures):
+        _drain_events_into_ui(events, progress, job_tasks)
         # Process results inline
 ```
 
@@ -466,14 +494,27 @@ if workers == 1:
 
 ```python
 else:
-    # Background drain thread handles events
-    # Main thread waits for futures
+    # Background drain thread handles events continuously
+    # Main thread waits for futures and drains periodically
+    while remaining:
+        _drain_events_into_ui(events, progress, job_tasks)
+        for future in list(_as_completed(remaining)):
+            # Process completed futures
 ```
 
 **Event queue:**
 - Workers push: STARTED, FINISHED, LOG, ACTIVITY
-- Background thread drains and updates UI
-- Main thread processes future results
+- Background drain thread polls at 20ms intervals for real-time UI updates
+- Main thread drains between future completions
+- Events processed safely on main thread only
+
+### Async History Writes
+
+Workers push log entries to a `DBWriteQueue`:
+- Single background writer thread drains the queue
+- Eliminates concurrent SQLite write contention
+- Supports both threading.Queue and multiprocessing.Manager().Queue()
+- Caller must `flush()` to ensure all writes complete
 
 ---
 
