@@ -47,6 +47,10 @@ class VerboseProgressSink:
         """Print phase header to stdout."""
         self._console.print(f"[{name}]")
 
+    def set_phase_label(self, label: str) -> None:
+        """Verbose sink: print the new tier label as a header."""
+        self._console.print(f"[{label}]")
+
     def log_result(self, filename: str, job_type: str, is_lossy: bool | None = None) -> None:
         """Print file processing result to stdout."""
         lossy_marker = " [LOSSY]" if is_lossy else ""

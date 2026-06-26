@@ -324,7 +324,7 @@ backend:
 
 execution:
   default_workers: 4
-  probe_workers: 8
+  probe_workers: 16
   worker_model: "thread"
 
 history:

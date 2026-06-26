@@ -103,7 +103,7 @@ history:
 
 execution:
   default_workers: 4
-  probe_workers: 8
+  probe_workers: 16
   worker_model: "thread"
 
 logging:
@@ -172,13 +172,20 @@ class ConversionBackend(ABC):
 File indexing and scanning.
 
 **Key modules:**
-- `scanner.py` - File tree scanner with optional progress bar
+- `scanner.py` - File tree scanner with optional progress bar. When
+  given a `ScanCache`, writes each scanned row into it during the walk
+  so the probe phase can skip the directory traversal on subsequent runs.
 - `builder.py` - SQLite index database manager
 - `cleanup.py` - Index cleanup utilities
+- `scan_cache.py` - Per-run scan-cache (`ScanCache`). Writes a small
+  path-only SQLite snapshot to `./tmp/scan_cache_<hash>.db` and reads
+  it back on subsequent runs to skip the directory walk.
 
 **Key classes:**
 - `IndexRow` - A row in the temp index snapshot
 - `IndexBuilder` - Manages the index_entries SQLite table
+- `ScanCache` - Manages the scan_cache_* SQLite table (path+size+mtime
+  +sidecar_files, no probe-derived fields)
 
 **Index schema:**
 
@@ -195,6 +202,31 @@ CREATE TABLE index_entries (
     created_at   TEXT NOT NULL
 )
 ```
+
+**Scan-cache schema:**
+
+```sql
+CREATE TABLE cache_meta (
+    input_signature TEXT NOT NULL,  -- sha256(input|excludes)[:16]
+    created_at      TEXT NOT NULL,
+    input_path      TEXT NOT NULL,
+    excludes        TEXT NOT NULL   -- comma-joined, sorted
+);
+
+CREATE TABLE scanned_files (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_path   TEXT NOT NULL UNIQUE,
+    file_size     INTEGER NOT NULL,
+    mtime         REAL NOT NULL,
+    sidecar_files TEXT NOT NULL DEFAULT ''
+);
+```
+
+The cache filename is `scan_cache_<md5(timestamp)[:12]>_<sig>.db`. The
+timestamp portion makes the file unique per run (matching the spec);
+the signature portion lets probe verify the cache matches the current
+CLI args before trusting it. Pass `--no-scan-cache` to disable the
+cache entirely.
 
 ---
 
@@ -221,15 +253,26 @@ Job list building from discovered audio files.
 
 #### `src/execution/`
 
-Conversion execution with thread/process pools.
+Conversion execution with thread/process pools. The package is organised as a
+small set of single-responsibility modules behind a backward-compatibility
+shim (`src.execution.runner`).
 
 **Key modules:**
-- `runner.py` - Execute ConversionJob lists using the configured backend
+- `run_all.py` - Top-level orchestrator: dispatches the job list to a
+  thread/process pool, returns `(summary, futures, events, write_queue)`
+- `run_job.py` - Single-job execution (`copy` / `convert` / `skip` branches)
+- `event_drain.py` - Drains queued events into the UI and advances the
+  master bar
+- `events.py` - `JobEventKind` enum, queue factory, and stream-callback
+  helpers
+- `runner.py` - Backward-compat shim that re-exports the names above
 
 **Key functions:**
 - `run_all()` - Execute jobs using thread or process pool
-- `run_job()` - Execute a single ConversionJob
+- `run_job()` - Execute a single `ConversionJob`
 - `_drain_events_into_ui()` - Drain queued events to update UI
+- `_run_event_drain_thread()` - Long-lived background drain used while
+  `run_all` is active
 
 **Event system:**
 
@@ -241,21 +284,43 @@ Workers push events onto a shared queue:
 
 A background drain thread continuously processes these events and updates the UI.
 
+**History writes:**
+
+`run_all` opens a `DBWriteQueue` against the history database and passes it
+to each worker. Workers call `write_queue.log_conversion(...)` from inside
+`run_job` and return immediately; a single background writer thread drains
+the queue and writes rows to SQLite. Callers must call `write_queue.flush()`
+after all futures complete so the writer thread exits cleanly before the
+DB connection is closed.
+
 ---
 
 #### `src/history/`
 
-Conversion history database.
+Conversion history database. The package is organised as a small set of
+single-responsibility modules behind a backward-compatibility shim
+(`src.history.db`).
 
 **Key modules:**
-- `db.py` - SQLite history database wrapper
+- `schema.py` - Shared `CREATE TABLE` statement, INSERT OR REPLACE template,
+  and WAL/busy-timeout pragmas
+- `conversion_db.py` - Synchronous `ConversionDB` wrapper used inside
+  workers for resume checks
+- `write_queue.py` - `DBWriteQueue` async writer thread that serialises
+  history writes from concurrent workers
+- `db.py` - Backward-compat shim that re-exports `ConversionDB` and
+  `DBWriteQueue`
 
 **Key classes:**
-- `ConversionDB` - Wraps SQLite connection for history tracking
+- `ConversionDB` - Wraps a SQLite connection for history reads and the
+  resume check
+- `DBWriteQueue` - Single background thread that drains queued
+  `log_conversion(...)` calls and writes them to SQLite
 
-**Key methods:**
+**Key methods (ConversionDB):**
 - `get_record()` - Get history record by source/dest
-- `log_conversion()` - Insert or update a history row
+- `log_conversion()` - Insert or update a history row (also available on
+  `DBWriteQueue` for async use)
 - `should_skip()` - Check if a job should be skipped based on history
 
 **Resume semantics:**
@@ -274,26 +339,41 @@ A job is skippable only if:
 
 #### `src/audio/`
 
-Audio inspection and lossy detection.
+Audio inspection and lossy detection. The package is organised as a small
+set of single-responsibility modules behind a backward-compatibility shim
+(`src.audio.inspector`).
 
 **Key modules:**
-- `inspector.py` - Multi-tier lossy detection
+- `extensions.py` - Tier 1: extension lookup (zero I/O)
+- `folder_heuristic.py` - Tier 2: folder-name heuristic (zero I/O)
+- `mutagen_probe.py` - Tier 3: mutagen metadata probe (I/O required)
+- `cascade.py` - Three-tier single-file cascade (`is_lossy`, `cascade_with_tier`,
+  `CascadeTier`)
+- `batch.py` - Batch and parallel-future utilities (`probe_many`,
+  `probe_generator`, `_classify_by_ext_and_folder`)
+- `inspector.py` - Backward-compat shim that re-exports the names above
+  (and `MutagenFile`) so existing imports keep working
 
 **Detection cascade:**
 
 1. **Extension lookup** (Tier 1) - Zero I/O, deterministic
    - Unambiguous lossless: `.flac`, `.ape`, `.wv`, `.wav`, etc.
    - Unambiguous lossy: `.mp3`, `.ogg`, `.opus`, `.wma`, etc.
-   - Ambiguous: `.m4a`, `.mp4`, `.caf` (need Tier 3)
+   - Ambiguous: `.m4a`, `.caf` (need Tier 3)
 
 2. **Folder-name heuristic** (Tier 2) - Zero I/O
    - Looks for lossy tokens in parent directory names
-   - Tokens: `aac`, `mp3`, `v0`, `128k`, `lame`, `vorbis`, `opus`, `webrip`, `itunes`, `amazon`, `deezer`, `spotify`, etc.
+   - Tokens: `aac`, `mp3`, `v0`, `128k`, `lame`, `vorbis`, `opus`, `webrip`,
+     `itunes`, `amazon`, `deezer`, `spotify`, etc.
+   - Stops at fully-numeric directories (e.g. sequential album IDs) and at
+     the filesystem root
 
 3. **Mutagen metadata probe** (Tier 3) - I/O required
    - Only for ambiguous extensions
-   - Checks codec name in metadata
-   - Runs in thread pool for parallel probing
+   - Checks codec name in metadata (falls back to `codec_description`)
+   - Runs in a thread pool for parallel probing
+   - Raises `ProbeError` if mutagen cannot read the file or the codec is
+     unknown
 
 ---
 
@@ -371,15 +451,23 @@ User interface components.
 4. Validate backend environment (fail-fast)
    │
    ▼
-5. Create tmp/index.db
+5. Create tmp/index.db (post-probe, deleted on success)
+   Also create or reuse tmp/scan_cache_<hash>.db (path-only snapshot,
+   kept across runs unless --no-scan-cache is passed).
    │
    ▼
 6. Scan phase ──────────────────────────────────────────────────────────────────
-   │  Discovers audio files, collects stats and sidecar candidates
+   │  Cache hit: load rows from existing scan-cache, skip the walk.
+   │  Cache miss: walk the directory with os.scandir, write path+size+
+   │  mtime+sidecar_files into the cache as a side-effect of the walk.
    ▼
 7. Probe phase ─────────────────────────────────────────────────────────────────
-   │  Multi-tier lossy detection (extension, folder heuristic, mutagen)
-   │  Writes results to index DB incrementally
+   │  Per-file cascade in a thread pool: each worker walks its file
+   │  through extension → folder → mutagen tiers, falling through
+   │  to the next tier only when the previous one returns None.
+   │  Single "Probing" bar whose label flips (Extension → Folder →
+   │  Mutagen) to reflect the mix of tiers resolving in real time.
+   │  Writes results to index DB incrementally.
    ▼
 8. Lossy gate ─────────────────────────────────────────────────────────────────
    │  If lossy files found and no --lossy-action: abort
@@ -511,7 +599,12 @@ wrapper-dbpoweramp/
 │   ├── exceptions.py         # Custom exception classes
 │   ├── audio/
 │   │   ├── __init__.py
-│   │   └── inspector.py      # Multi-tier lossy detection
+│   │   ├── inspector.py      # Backward-compat shim
+│   │   ├── extensions.py     # Tier 1: extension lookup
+│   │   ├── folder_heuristic.py # Tier 2: folder-name heuristic
+│   │   ├── mutagen_probe.py  # Tier 3: mutagen metadata probe
+│   │   ├── cascade.py        # Three-tier single-file cascade
+│   │   └── batch.py          # Batch / parallel-future utilities
 │   ├── backends/
 │   │   ├── __init__.py
 │   │   ├── base.py           # ConversionBackend ABC
@@ -524,22 +617,34 @@ wrapper-dbpoweramp/
 │   │   └── args.py           # Argument parsing
 │   ├── config/
 │   │   ├── __init__.py
+│   │   ├── models.py         # settings.yaml dataclasses
 │   │   ├── settings_loader.py # settings.yaml loader
 │   │   └── preset_loader.py  # presets.yaml loader
 │   ├── execution/
 │   │   ├── __init__.py
-│   │   └── runner.py         # Job execution
+│   │   ├── runner.py         # Backward-compat shim
+│   │   ├── events.py         # JobEventKind + queue helpers
+│   │   ├── event_drain.py    # UI drain (single + thread)
+│   │   ├── run_job.py        # Single-job execution
+│   │   └── run_all.py        # Thread/process pool orchestrator
 │   ├── history/
 │   │   ├── __init__.py
-│   │   └── db.py             # SQLite history
+│   │   ├── db.py             # Backward-compat shim
+│   │   ├── schema.py         # CREATE TABLE / INSERT / pragmas
+│   │   ├── conversion_db.py  # Synchronous read/write wrapper
+│   │   └── write_queue.py    # Async writer thread
 │   ├── index/
 │   │   ├── __init__.py
 │   │   ├── scanner.py        # File scanning
-│   │   ├── builder.py       # Index DB manager
+│   │   ├── builder.py        # SQLite index (batched writes)
+│   │   ├── schema.py         # CREATE TABLE / INSERT / pragmas / migration
 │   │   └── cleanup.py        # Index cleanup
 │   ├── jobs/
 │   │   ├── __init__.py
-│   │   └── builder.py        # Job list building
+│   │   ├── builder.py        # Backward-compat shim
+│   │   ├── classify.py       # job_type decision + IndexRow mutation
+│   │   ├── enrich.py         # Streaming + blocking probe pipelines
+│   │   └── build_jobs.py     # ConversionJob list construction
 │   ├── models/
 │   │   ├── __init__.py
 │   │   └── types.py          # Dataclass types
@@ -551,7 +656,13 @@ wrapper-dbpoweramp/
 │   │   └── manager.py        # Sidecar file copying
 │   └── ui/
 │       ├── __init__.py
-│       └── progress_view.py  # Rich progress display
+│       ├── progress_view.py  # Backward-compat shim
+│       └── progress/
+│           ├── protocol.py   # ProgressSink protocol, SubtaskID
+│           ├── renderer.py   # Self-contained progress-bar renderer
+│           ├── rich_sink.py  # RichProgressSink (rich.live.Live)
+│           ├── verbose_sink.py # VerboseProgressSink
+│           └── null_sink.py  # NullProgressSink
 ├── tests/
 │   ├── __init__.py
 │   ├── conftest.py           # Pytest configuration
@@ -559,6 +670,7 @@ wrapper-dbpoweramp/
 │   ├── test_conversion_db.py
 │   ├── test_index_builder.py
 │   ├── test_mutagen_probe.py
-│   └── test_progress_view.py
+│   ├── test_progress_view.py
+│   └── test_dbpoweramp_cli.py
 └── docs/                     # This documentation
 ```

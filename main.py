@@ -6,6 +6,8 @@ import signal
 import sys
 from pathlib import Path
 
+from rich import print as rprint
+
 from src.backends.registry import detect_backend_for_run, get_backend
 from src.cli.args import parse_args, validate_args
 from src.config.preset_loader import get_preset, load_presets
@@ -14,9 +16,11 @@ from src.exceptions import BackendError, PresetNotFoundError
 from src.execution.runner import run_all
 from src.index.builder import IndexBuilder
 from src.index.cleanup import cleanup_index
+from src.index.scan_cache import ScanCache
 from src.index.scanner import (
     IndexRow,
     _discover_audio_files,
+    load_rows_from_cache,
     scan_with_progress,
 )
 from src.jobs.builder import enrich_index_rows_streaming
@@ -33,7 +37,7 @@ def _signal_handler(signum, frame) -> None:  # noqa: ANN001
     """Mark the run as interrupted (set a flag; do not raise from a signal handler)."""
     global _run_interrupted
     _run_interrupted = True
-    print("\n[yellow]Interrupted.[/yellow]", file=sys.stderr)
+    rprint("\n[yellow]Interrupted.[/yellow]", file=sys.stderr)
 
 
 def _resolve_backend_name(args, settings, preset) -> Backend:
@@ -68,7 +72,7 @@ def _build_index_only(
     Args:
         verbose: If True, print per-file details to stdout during scanning and probing.
     """
-    from src.index.scanner import _discover_audio_files, scan_with_progress
+    from src.index.scanner import _discover_audio_files, load_rows_from_cache, scan_with_progress
     from src.jobs.builder import enrich_index_rows_streaming
     from src.ui.progress_view import VerboseProgressSink
 
@@ -76,28 +80,78 @@ def _build_index_only(
     old_sigint = signal.signal(signal.SIGINT, _signal_handler)
     old_sigterm = signal.signal(signal.SIGTERM, _signal_handler)
 
+    # --build-index also benefits from the scan-cache: re-running it
+    # against the same input reuses the previous scan and skips the
+    # directory walk (probe still runs from scratch because the
+    # --build-index output is the post-probe index).
+    tmp_dir = Path("tmp")
+    tmp_dir.mkdir(exist_ok=True)
+
+    scan_cache: ScanCache | None = None
+    cache_enabled = not getattr(args, "no_scan_cache", False)
+
     try:
-        # Scan phase
-        audio_files = _discover_audio_files(args.input, args.exclude)
-        total_files = len(audio_files)
+        if cache_enabled:
+            try:
+                scan_cache = ScanCache.open_latest(tmp_dir, args.input, args.exclude)
+            except OSError as exc:
+                print(f"warning: could not read scan-cache: {exc}", file=sys.stderr)
+                scan_cache = None
 
-        if verbose:
-            sink = VerboseProgressSink()
-            sink.log_phase("Scanning")
-            sink.log_file(f"Found {total_files} audio file(s)")
+        if scan_cache is not None:
+            rows = load_rows_from_cache(scan_cache)
+            total_files = len(rows)
+            if verbose:
+                sink = VerboseProgressSink()
+                sink.log_phase("Scanning")
+                sink.log_file(
+                    f"Cache hit: {total_files} file(s) from {scan_cache.db_path.name}"
+                )
+            else:
+                sink = RichProgressSink()
+                sink.start_phase("Scanning (cached)", total=total_files)
+                for _ in range(total_files):
+                    sink.advance()
+            sink.stop()
+            rprint(
+                f" [green]{len(rows)} file(s) loaded from scan-cache "
+                f"{scan_cache.db_path.name}[/green]"
+            )
         else:
-            sink = RichProgressSink()
-            sink.start_phase("Scanning", total=total_files)
-        rows, _ = scan_with_progress(
-            input_path=args.input,
-            excludes=args.exclude,
-            preset=preset,
-            progress=sink,
-            audio_files=audio_files,
-        )
-        sink.stop()
+            # Cache miss — walk the directory and populate a fresh cache.
+            audio_files = _discover_audio_files(args.input, args.exclude)
+            total_files = len(audio_files)
 
-        print(f" [green]{len(rows)} file(s) found[/green]")
+            if cache_enabled:
+                try:
+                    scan_cache = ScanCache.create(tmp_dir, args.input, args.exclude)
+                except OSError as exc:
+                    print(
+                        f"warning: could not create scan-cache: {exc}",
+                        file=sys.stderr,
+                    )
+                    scan_cache = None
+
+            if verbose:
+                sink = VerboseProgressSink()
+                sink.log_phase("Scanning")
+                sink.log_file(f"Found {total_files} audio file(s)")
+            else:
+                sink = RichProgressSink()
+                sink.start_phase("Scanning", total=total_files)
+            rows, _ = scan_with_progress(
+                input_path=args.input,
+                excludes=args.exclude,
+                preset=preset,
+                progress=sink,
+                audio_files=audio_files,
+                cache=scan_cache,
+            )
+            sink.stop()
+
+            rprint(f" [green]{len(rows)} file(s) found[/green]")
+            if scan_cache is not None:
+                rprint(f" [cyan]Scan cache:[/cyan] {scan_cache.db_path}")
 
         if not rows:
             print("No audio files found.")
@@ -145,19 +199,24 @@ def _build_index_only(
 
         # Print summary
         summary = index_builder.get_summary()
-        print()
-        print(f"[green]Index built successfully:[/green] {args.build_index}")
-        print(f"  Total files: {summary['total']}")
-        print(f"  Total size: {_format_bytes(summary['total_bytes'])}")
-        print(f"  Lossy files: {summary['lossy']}")
+        rprint()
+        rprint(f"[green]Index built successfully:[/green] {args.build_index}")
+        rprint(f"  Total files: {summary['total']}")
+        rprint(f"  Total size: {_format_bytes(summary['total_bytes'])}")
+        rprint(f"  Lossy files: {summary['lossy']}")
         for job_type, count in summary["by_type"].items():
-            print(f"  {job_type}: {count}")
+            rprint(f"  {job_type}: {count}")
 
         index_builder.close()
 
     finally:
         signal.signal(signal.SIGINT, old_sigint)
         signal.signal(signal.SIGTERM, old_sigterm)
+        if scan_cache is not None:
+            try:
+                scan_cache.close()
+            except Exception:
+                pass
 
 
 def _run_from_index(
@@ -368,6 +427,8 @@ def _main() -> None:
     # 5. Set up the temp index DB BEFORE the scan so we capture every file,
     #    including those the lossy gate may skip. The DB is removed on a clean
     #    exit and kept on failure (for post-mortem debugging).
+    #    Also set up the scan-cache: a small per-run SQLite snapshot of the
+    #    discovered files so the probe phase can skip the directory walk.
     tmp_dir = Path("tmp")
     try:
         tmp_dir.mkdir(exist_ok=True)
@@ -384,31 +445,102 @@ def _main() -> None:
     summary: dict[str, int] = {}
     exc_info: str | None = None
 
+    # Track the scan-cache so we can close it on exit (regardless of outcome).
+    scan_cache: ScanCache | None = None
+    scan_cache_loaded_from_disk: bool = False
+
     try:
-        # 7. Scan phase with a progress bar.
-        # Use _discover_audio_files once to get both the count and the iterator;
-        # scan_with_progress walks the same list and calls progress.advance()
-        # per file, eliminating the double rglob.
-        audio_files = _discover_audio_files(args.input, args.exclude)
-        total_files = len(audio_files)
-
-        if args.verbose:
-            sink = VerboseProgressSink()
-            sink.log_phase("Scanning")
-            sink.log_file(f"Found {total_files} audio file(s)")
-        else:
-            sink = RichProgressSink()
-            sink.start_phase("Scanning", total=total_files)
-        rows, sidecar_map = scan_with_progress(
-            input_path=args.input,
-            excludes=args.exclude,
-            preset=preset,
-            progress=sink,
-            audio_files=audio_files,
+        # 7. Scan phase.
+        #    Two-tier strategy:
+        #      a) If a matching scan-cache file already exists in ./tmp/ (from a
+        #         previous run on the same input+excludes), load rows from it
+        #         — skipping the directory walk entirely.
+        #      b) Otherwise, walk the directory with _discover_audio_files,
+        #         pass the cache to scan_with_progress so it gets populated
+        #         as a side-effect, then proceed.
+        #    --no-scan-cache disables (a) and forces a fresh walk every run.
+        cache_enabled = (
+            not getattr(args, "no_scan_cache", False)
+            and tmp_dir is not None
+            and args.input is not None
         )
-        sink.stop()
 
-        print(f" [green]{len(rows)} file(s) found[/green]")
+        if cache_enabled:
+            try:
+                scan_cache = ScanCache.open_latest(
+                    tmp_dir, args.input, args.exclude
+                )
+            except OSError as exc:
+                print(
+                    f"warning: could not read scan-cache: {exc}",
+                    file=sys.stderr,
+                )
+                scan_cache = None
+
+        if scan_cache is not None:
+            # Cache hit — skip the directory walk entirely.
+            cached_rows = load_rows_from_cache(scan_cache)
+            total_files = len(cached_rows)
+            scan_cache_loaded_from_disk = True
+            rows = cached_rows
+            sidecar_map: dict[Path, str] = {
+                Path(r.source_path): r.sidecar_files for r in rows
+            }
+
+            if args.verbose:
+                sink = VerboseProgressSink()
+                sink.log_phase("Scanning")
+                sink.log_file(f"Cache hit: {total_files} file(s) from {scan_cache.db_path.name}")
+            else:
+                sink = RichProgressSink()
+                sink.start_phase("Scanning (cached)", total=total_files)
+                # Advance the bar to completion instantly — the work was
+                # already done in the previous run that wrote the cache.
+                for _ in range(total_files):
+                    sink.advance()
+            sink.stop()
+            rprint(
+                f" [green]{len(rows)} file(s) loaded from scan-cache "
+                f"{scan_cache.db_path.name}[/green]"
+            )
+        else:
+            # Cache miss (or cache disabled) — walk the directory and
+            # populate the cache as we go.
+            audio_files = _discover_audio_files(args.input, args.exclude)
+            total_files = len(audio_files)
+
+            if cache_enabled and tmp_dir is not None:
+                try:
+                    scan_cache = ScanCache.create(
+                        tmp_dir, args.input, args.exclude
+                    )
+                except OSError as exc:
+                    print(
+                        f"warning: could not create scan-cache: {exc}",
+                        file=sys.stderr,
+                    )
+                    scan_cache = None
+
+            if args.verbose:
+                sink = VerboseProgressSink()
+                sink.log_phase("Scanning")
+                sink.log_file(f"Found {total_files} audio file(s)")
+            else:
+                sink = RichProgressSink()
+                sink.start_phase("Scanning", total=total_files)
+            rows, sidecar_map = scan_with_progress(
+                input_path=args.input,
+                excludes=args.exclude,
+                preset=preset,
+                progress=sink,
+                audio_files=audio_files,
+                cache=scan_cache,
+            )
+            sink.stop()
+
+            rprint(f" [green]{len(rows)} file(s) found[/green]")
+            if scan_cache is not None:
+                rprint(f" [cyan]Scan cache:[/cyan] {scan_cache.db_path}")
 
         if not rows:
             print("No audio files found.")
@@ -459,7 +591,7 @@ def _main() -> None:
 
         if index_builder is not None:
             index_builder.commit()
-            print(f"[cyan]Index:[/cyan] {index_db_path}")
+            rprint(f"[cyan]Index:[/cyan] {index_db_path}")
             # Re-read the DB as the source of truth — all rows are already written
             # by the streaming probe, so this is a fast snapshot of what landed.
             index_builder.close()
@@ -614,6 +746,15 @@ def _main() -> None:
             exception_info=exc_info,
             interrupted=_run_interrupted,
         )
+
+        # 15. Close the scan-cache (if any). Unlike the index DB, the
+        #     scan-cache is kept on disk across runs — it's the per-run
+        #     snapshot that makes the next probe phase free.
+        if scan_cache is not None:
+            try:
+                scan_cache.close()
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":

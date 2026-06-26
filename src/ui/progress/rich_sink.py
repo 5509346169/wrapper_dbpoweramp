@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import time
 from collections import deque
 
 from rich.console import Console, Group
@@ -37,13 +38,13 @@ class RichProgressSink:
         self._total_files: int | None = total_files
         self._total_bytes: int | None = total_bytes
 
-        # Force terminal is OFF: PowerShell on Windows does not reliably
-        # respond to the cursor-position escape codes Rich's Live relies on,
-        # and forcing ``force_terminal=True`` caused Live's refresh thread to
-        # block indefinitely. With autodetect, Rich falls back to plain output
-        # when stdout isn't a real terminal (piped, captured, etc.).
+        # Force terminal ON so colors and bar styles render. PowerShell on
+        # Windows 10+ supports VT100 escapes by default; on hosts that don't
+        # (e.g. when stdout is redirected), Rich's autodetect still falls back
+        # to plain output because ``is_terminal`` is consulted for the Live
+        # cursor moves regardless of ``force_terminal``.
         self._console = Console(
-            force_terminal=False,
+            force_terminal=True,
             legacy_windows=False,
             file=sys.stdout,
         )
@@ -51,23 +52,41 @@ class RichProgressSink:
         self._renderer: _ProgressRenderer | None = None
         self._log_lines: deque[str] = deque(maxlen=30)
 
+        # Throttle state for _refresh(): we update the Live renderable at
+        # most every _MIN_REFRESH_INTERVAL seconds. Rich's Live thread
+        # already redraws at refresh_per_second; calling .update() per
+        # advance() is wasted work when 26k files complete in seconds.
+        self._MIN_REFRESH_INTERVAL = 0.05  # 50ms = up to 20 Hz
+        self._last_refresh_ts: float = 0.0
+        self._refresh_pending: bool = False
+
     # ------------------------------------------------------------------
     # internal helpers
     # ------------------------------------------------------------------
 
     def _refresh(self) -> None:
-        """Rebuild the layout and push a refresh to the Live display.
+        """Push a refresh to the Live display, throttled to ~20Hz.
 
-        Wrapped in a broad except: a Rich console error or terminal quirk
-        must not crash the probe loop. Errors here are silently dropped so
-        the actual work continues.
+        Rich's Live runs its own refresh thread (refresh_per_second=10) so we
+        do NOT call ``self._live.refresh()`` here — that would force a
+        synchronous redraw on the calling thread for every state change.
+        We only call ``self._live.update()``, which queues a new renderable
+        for the Live thread to pick up at its next tick.
+
+        Throttling skips redundant ``update()`` calls when state changes
+        arrive faster than the display can render them.
         """
         if self._live is None:
             return
-        try:
+        now = time.monotonic()
+        if now - self._last_refresh_ts >= self._MIN_REFRESH_INTERVAL:
+            self._last_refresh_ts = now
+            self._refresh_pending = False
             self._live.update(self._make_renderable())
-        except Exception:
-            pass
+        else:
+            # Mark that state changed; the Live thread's tick (which calls
+            # into the renderable) will reflect it on its next pass.
+            self._refresh_pending = True
 
     def _make_renderable(self) -> Group:
         """Build the compact inline stack: bar row + up to LOG_LINES log lines."""
@@ -100,16 +119,11 @@ class RichProgressSink:
         self._live = Live(
             self._make_renderable(),
             console=self._console,
-            refresh_per_second=4,
+            refresh_per_second=10,
             transient=False,
             screen=False,
         )
-        # __enter__ can block on terminal probes; wrap defensively so a
-        # terminal quirk never freezes the probe loop.
-        try:
-            self._live.__enter__()
-        except Exception:
-            self._live = None
+        self._live.__enter__()
         self._refresh()
 
     def advance(self, amount: int = 1) -> None:
@@ -178,3 +192,10 @@ class RichProgressSink:
         if self._renderer is not None:
             self._renderer.set_phase_name(name)
         self.log(f"[{name}]")
+
+    def set_phase_label(self, label: str) -> None:
+        """Update the master bar's phase label without restarting the phase."""
+        if self._renderer is None:
+            return
+        self._renderer.set_phase_name(label)
+        self._refresh()

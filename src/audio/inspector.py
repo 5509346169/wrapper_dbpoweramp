@@ -17,7 +17,7 @@ it here as well.
 from mutagen import File as MutagenFile
 
 from src.audio.batch import _classify_by_ext_and_folder, probe_generator, probe_many
-from src.audio.cascade import is_lossy
+from src.audio.cascade import CascadeTier, cascade_with_tier, is_lossy
 from src.audio.extensions import (
     ALL_LOSSY_EXT,
     AMBIGUOUS_EXT,
@@ -31,6 +31,7 @@ from src.audio.mutagen_probe import LOSSLESS_CODECS, _is_lossy_by_mutagen
 __all__ = [
     "ALL_LOSSY_EXT",
     "AMBIGUOUS_EXT",
+    "CascadeTier",
     "LOSSLESS_CODECS",
     "LOSSY_FOLDER_TOKENS",
     "MutagenFile",
@@ -40,6 +41,7 @@ __all__ = [
     "_is_lossy_by_ext",
     "_is_lossy_by_folder",
     "_is_lossy_by_mutagen",
+    "cascade_with_tier",
     "is_lossy",
     "probe_generator",
     "probe_many",

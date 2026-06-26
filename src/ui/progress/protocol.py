@@ -72,3 +72,12 @@ class ProgressSink(Protocol):
     def set_activity(self, activity: str) -> None:
         """Set the current activity description (e.g., 'copying' or 'converting')."""
         ...
+
+    def set_phase_label(self, label: str) -> None:
+        """Update the master bar's phase label without restarting the phase.
+
+        Used when one phase (e.g. ``Probing``) internally transitions
+        between sub-stages (Extension -> Folder -> Mutagen) and the
+        bar should keep advancing but show the current tier.
+        """
+        ...

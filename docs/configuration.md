@@ -44,7 +44,7 @@ history:
 
 execution:
   default_workers: 4
-  probe_workers: 8
+  probe_workers: 16
   worker_model: "thread"
 
 logging:
@@ -325,11 +325,11 @@ python main.py -I ~/Music -O ~/Converted -p flac-lossless -w 8
 **Type:** Integer  
 **Default:** `8`
 
-Number of parallel workers for ffprobe pre-flight probing (I/O bound, can be higher than conversion workers).
+Number of parallel workers for mutagen probe pre-flight (I/O bound, can be higher than conversion workers).
 
 ```yaml
 execution:
-  probe_workers: 8
+  probe_workers: 16
 ```
 
 ---
@@ -415,7 +415,7 @@ history:
 
 execution:
   default_workers: 4
-  probe_workers: 8
+  probe_workers: 16
   worker_model: "thread"
 
 logging:
@@ -446,7 +446,7 @@ history:
 
 execution:
   default_workers: 4
-  probe_workers: 8
+  probe_workers: 16
   worker_model: "thread"
 
 logging:

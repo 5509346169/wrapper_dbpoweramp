@@ -9,51 +9,79 @@ This document provides detailed reference for each module in the `src/` package.
 ```
 src/
 ├── __init__.py
-├── exceptions.py           # Custom exception classes
+├── exceptions.py                # Custom exception classes
 ├── audio/
 │   ├── __init__.py
-│   └── inspector.py       # Multi-tier lossy detection
+│   ├── inspector.py            # Backward-compat shim (re-exports)
+│   ├── extensions.py           # Tier 1: file-extension lookup
+│   ├── folder_heuristic.py     # Tier 2: folder-name heuristic
+│   ├── mutagen_probe.py        # Tier 3: mutagen metadata probe
+│   ├── cascade.py              # Three-tier single-file cascade
+│   └── batch.py                # Batch / parallel-future utilities
 ├── backends/
 │   ├── __init__.py
-│   ├── base.py           # ConversionBackend ABC
-│   ├── registry.py       # Backend factory
-│   ├── native_ffmpeg.py  # FFmpeg backend
-│   ├── native_dbpoweramp.py  # Native dBpoweramp backend
-│   └── wine_dbpoweramp.py    # Wine dBpoweramp backend
+│   ├── base.py                 # ConversionBackend ABC
+│   ├── registry.py             # Backend factory
+│   ├── native_ffmpeg.py        # FFmpeg backend
+│   ├── native_dbpoweramp.py    # Native dBpoweramp backend
+│   └── wine_dbpoweramp.py      # Wine dBpoweramp backend
 ├── cli/
 │   ├── __init__.py
-│   └── args.py           # Argument parsing
+│   └── args.py                 # Argument parsing
 ├── config/
 │   ├── __init__.py
-│   ├── settings_loader.py    # settings.yaml loader
-│   └── preset_loader.py     # presets.yaml loader
+│   ├── models.py               # settings.yaml dataclasses
+│   ├── settings_loader.py      # settings.yaml loader
+│   └── preset_loader.py        # presets.yaml loader
 ├── execution/
 │   ├── __init__.py
-│   └── runner.py         # Job execution
+│   ├── runner.py               # Backward-compat shim (re-exports)
+│   ├── events.py               # JobEventKind + queue helpers
+│   ├── event_drain.py          # UI drain (single + thread)
+│   ├── run_job.py              # Single-job execution
+│   └── run_all.py              # Thread/process pool orchestrator
 ├── history/
 │   ├── __init__.py
-│   └── db.py             # SQLite history
+│   ├── db.py                   # Backward-compat shim (re-exports)
+│   ├── schema.py               # CREATE TABLE / INSERT / pragmas
+│   ├── conversion_db.py        # Synchronous read/write wrapper
+│   └── write_queue.py          # Async writer thread
 ├── index/
 │   ├── __init__.py
-│   ├── scanner.py        # File scanning
-│   ├── builder.py       # Index DB manager
-│   └── cleanup.py        # Index cleanup
+│   ├── scanner.py              # File scanning
+│   ├── schema.py               # CREATE TABLE / INSERT / pragmas / migration
+│   ├── builder.py              # SQLite index (batched writes)
+│   └── cleanup.py              # Index cleanup
 ├── jobs/
 │   ├── __init__.py
-│   └── builder.py        # Job list building
+│   ├── builder.py              # Backward-compat shim (re-exports)
+│   ├── classify.py             # job_type decision + IndexRow mutation
+│   ├── enrich.py               # Streaming + blocking probe pipelines
+│   └── build_jobs.py           # ConversionJob list construction
 ├── models/
 │   ├── __init__.py
-│   └── types.py          # Dataclass types
+│   └── types.py                # Dataclass types
 ├── pathing/
 │   ├── __init__.py
-│   └── resolver.py       # Path resolution
+│   └── resolver.py             # Path resolution
 ├── sidecars/
 │   ├── __init__.py
-│   └── manager.py        # Sidecar file copying
+│   └── manager.py              # Sidecar file copying
 └── ui/
     ├── __init__.py
-    └── progress_view.py  # Rich progress display
+    ├── progress_view.py        # Backward-compat shim (re-exports)
+    └── progress/
+        ├── protocol.py         # ProgressSink protocol, SubtaskID
+        ├── renderer.py         # Self-contained progress-bar renderer
+        ├── rich_sink.py        # RichProgressSink (rich.live.Live)
+        ├── verbose_sink.py     # VerboseProgressSink
+        └── null_sink.py        # NullProgressSink
 ```
+
+The shim modules (`audio/inspector.py`, `history/db.py`, `execution/runner.py`,
+`jobs/builder.py`, `ui/progress_view.py`) re-export the names that used to live
+in their single-file implementations, so `from src.audio.inspector import
+is_lossy` and similar imports keep working unchanged.
 
 ---
 
@@ -254,9 +282,10 @@ class JobResult:
 
 ## `src/config/`
 
-### `settings_loader.py`
+### `models.py`
 
-Loads and validates `settings.yaml` into typed dataclasses.
+Dataclasses describing the structure of `settings.yaml`. These are imported by
+`settings_loader.py` and re-exported from there for backwards compatibility.
 
 #### Dataclasses
 
@@ -314,6 +343,13 @@ class Settings:
     logging: LoggingConfig
 ```
 
+### `settings_loader.py`
+
+Loads and validates `settings.yaml` into typed dataclasses. The dataclasses
+themselves live in :mod:`src.config.models`; this module re-exports them so
+existing imports (`from src.config.settings_loader import Settings`) keep
+working.
+
 #### Functions
 
 ```python
@@ -368,13 +404,15 @@ def validate_args(args: "Namespace") -> None:
 
 ---
 
-## `src/audio/inspector.py`
+## `src/audio/`
 
-Multi-tier lossy detection with cascade from fast to slow.
+Audio inspection and lossy detection. The original single-file
+`inspector.py` was split into a small set of single-responsibility modules.
+`inspector.py` remains as a backward-compat shim that re-exports the same
+public/private names — including `MutagenFile`, which tests
+monkey-patch — so existing imports keep working.
 
-### Constants
-
-#### Extension Sets
+### Extension sets (`src/audio/extensions.py`)
 
 ```python
 UNAMBIGUOUS_LOSSLESS_EXT: frozenset[str] = {
@@ -384,7 +422,7 @@ UNAMBIGUOUS_LOSSLESS_EXT: frozenset[str] = {
 }
 
 AMBIGUOUS_EXT: frozenset[str] = {
-    ".m4a", ".mp4", ".caf",  # ALAC vs AAC
+    ".m4a", ".caf",           # ALAC vs AAC
 }
 
 UNAMBIGUOUS_LOSSY_EXT: frozenset[str] = {
@@ -399,9 +437,11 @@ UNAMBIGUOUS_LOSSY_EXT: frozenset[str] = {
     ".3gp", ".3g2",
     ".webm",
 }
+
+ALL_LOSSY_EXT: frozenset[str] = UNAMBIGUOUS_LOSSY_EXT | AMBIGUOUS_EXT
 ```
 
-#### Folder Tokens
+### Folder tokens (`src/audio/folder_heuristic.py`)
 
 ```python
 LOSSY_FOLDER_TOKENS: frozenset[str] = {
@@ -416,7 +456,10 @@ LOSSY_FOLDER_TOKENS: frozenset[str] = {
 }
 ```
 
-#### Lossless Codecs
+The folder heuristic stops at fully-numeric directory names (e.g. album IDs in
+sequential scans) and at the filesystem root, to avoid false positives.
+
+### Lossless codecs (`src/audio/mutagen_probe.py`)
 
 ```python
 LOSSLESS_CODECS: frozenset[str] = {
@@ -427,30 +470,41 @@ LOSSLESS_CODECS: frozenset[str] = {
 }
 ```
 
-### Functions
+Tier 3 falls back to `info.codec_description` when `info.codec` is empty or
+`"unknown"`, and raises `ProbeError` if neither field resolves to a known
+codec.
+
+### Public functions
 
 ```python
 def is_lossy(file: Path) -> bool:
-    """Three-tier lossy detection for a single file."""
+    """Three-tier lossy detection for a single file (in src/audio/cascade.py)."""
 
 def probe_many(files: list[Path], workers: int) -> dict[Path, bool]:
-    """Three-tier lossy detection for a batch of files (blocking)."""
+    """Three-tier lossy detection for a batch of files (blocking).
+
+    Extension and folder-name checks are applied synchronously first;
+    mutagen runs only on the ambiguous subset in a thread pool.
+    """
 
 def probe_generator(files: list[Path], workers: int) -> tuple[Future, ...]:
     """Launch mutagen probes only for the Tier-3 ambiguous subset."""
 
-def _is_lossy_by_ext(path: Path) -> Optional[bool]:
-    """Tier 1: extension lookup."""
-
-def _is_lossy_by_folder(path: Path) -> Optional[bool]:
-    """Tier 2: folder-name heuristic."""
-
-def _is_lossy_by_mutagen(file: Path) -> bool:
-    """Tier 3: mutagen metadata probe."""
-
 def _classify_by_ext_and_folder(files: list[Path]) -> dict[Path, Optional[bool]]:
     """Apply tiers 1 and 2 to every file in one synchronous pass."""
+
+def _is_lossy_by_ext(path: Path) -> Optional[bool]:
+    """Tier 1: extension lookup (in src/audio/extensions.py)."""
+
+def _is_lossy_by_folder(path: Path) -> Optional[bool]:
+    """Tier 2: folder-name heuristic (in src/audio/folder_heuristic.py)."""
+
+def _is_lossy_by_mutagen(file: Path) -> bool:
+    """Tier 3: mutagen metadata probe (in src/audio/mutagen_probe.py)."""
 ```
+
+`MutagenFile` is also re-exported from the `inspector.py` shim so existing
+`patch('src.audio.inspector.MutagenFile')` test stubs continue to work.
 
 ---
 
@@ -496,19 +550,37 @@ def _collect_sidecar_basenames(
     """Return newline-joined basenames of all existing sidecar files for infile."""
 ```
 
+### `schema.py`
+
+Shared index_entries table schema, INSERT template, pragmas, and the
+`is_lossy` column migration. Lives next to `builder.py` so the schema can be
+referenced from migrations or tests without importing the class.
+
+```python
+CREATE_INDEX_ENTRIES_TABLE_SQL: str
+INSERT_INDEX_ENTRY_SQL: str
+IS_LOSSY_COLUMN_MIGRATION: str
+
+def apply_index_pragmas(conn: sqlite3.Connection) -> None:
+    """Set WAL mode and synchronous=NORMAL for fast bulk inserts."""
+
+def ensure_is_lossy_column(conn: sqlite3.Connection) -> None:
+    """Add ``is_lossy`` to tables created by older versions."""
+```
+
 ### `builder.py`
 
-SQLite index database manager.
-
-#### Classes
+SQLite index database manager with batched inserts.
 
 ```python
 class IndexBuilder:
+    _BATCH_SIZE: int = 1000     # auto-flush threshold
+
     def __init__(self, db_path: Path) -> None:
-        """Open SQLite connection and ensure table exists."""
+        """Open SQLite connection and ensure table exists; migrates older tables."""
 
     def add(self, row: IndexRow) -> None:
-        """Insert a single row into the index."""
+        """Buffer a single row; auto-flushes every _BATCH_SIZE rows."""
 
     def add_many(self, rows: list[IndexRow]) -> None:
         """Insert multiple rows using executemany."""
@@ -517,17 +589,21 @@ class IndexBuilder:
         """Yield all rows in insertion order."""
 
     def commit(self) -> None:
-        """Commit pending transaction."""
+        """Flush any buffered rows and commit the transaction."""
 
     def close(self) -> None:
         """Close the database connection."""
 
+    def __enter__(self) -> "IndexBuilder": ...
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        """commit() + close()."""
+
     @classmethod
     def from_existing(cls, db_path: Path) -> "IndexBuilder":
-        """Open an existing index database."""
+        """Open an existing index database. Raises FileNotFoundError if missing."""
 
     def get_summary(self) -> dict[str, int | dict[str, int]]:
-        """Get summary: total, lossy count, counts by job_type."""
+        """Get summary: total, lossy count, counts by job_type, total_bytes."""
 ```
 
 ### `cleanup.py`
@@ -546,11 +622,41 @@ def cleanup_index(
 
 ---
 
-## `src/jobs/builder.py`
+## `src/jobs/`
 
-Build ConversionJob lists from discovered audio files.
+Build `ConversionJob` lists from discovered audio files. The original
+single-file `builder.py` was split into `classify.py`, `enrich.py`, and
+`build_jobs.py`. `builder.py` remains as a backward-compat shim that
+re-exports the same public/private names (including `compute_output_path`,
+which tests monkey-patch here).
 
-### Functions
+### `src/jobs/classify.py`
+
+```python
+def decide_job_type(
+    is_lossy_val: bool | None,
+    lossy_action: LossyAction | None,
+    no_lossy_check: bool,
+) -> str:
+    """Pure helper: pick job_type based on lossy status and configured action."""
+
+def classify(
+    row: IndexRow,
+    is_lossy_val: bool | None,
+    lossy_action: LossyAction | None,
+    no_lossy_check: bool,
+    input_root: Path,
+    source_root: Path | None,
+    output_root: Path,
+    preset: PresetConfig,
+) -> None:
+    """Classify a single row and write it to the index DB immediately.
+
+    Mutates ``row`` in-place via ``object.__setattr__`` (IndexRow is frozen).
+    """
+```
+
+### `src/jobs/enrich.py`
 
 ```python
 def enrich_index_rows_streaming(
@@ -565,7 +671,15 @@ def enrich_index_rows_streaming(
     progress: "ProgressSink",
     index_builder: IndexBuilder | None,
 ) -> list[Path]:
-    """Stream-probe files, write rows to index DB incrementally."""
+    """Stream-probe files, write rows to the index DB incrementally.
+
+    Uses a single "Probing" progress bar whose phase label flips
+    (Extension -> Folder -> Mutagen) to reflect which tier resolved
+    the most recent file. Each file walks the cascade independently
+    inside its worker thread — there are no per-tier serial barriers,
+    so every worker is always busy on the deepest tier its current
+    file requires.
+    """
 
 def enrich_index_rows(
     rows: list[IndexRow],
@@ -578,7 +692,11 @@ def enrich_index_rows(
     probe_workers: int,
 ) -> list[Path]:
     """Blocking convenience wrapper for enrich_index_rows_streaming."""
+```
 
+### `src/jobs/build_jobs.py`
+
+```python
 def build_jobs(
     files: list[Path],
     input_root: Path,
@@ -592,7 +710,12 @@ def build_jobs(
     sidecar_map: dict[Path, str] | None = None,
 ) -> tuple[list[ConversionJob], list[Path]]:
     """Build ConversionJob list from discovered audio files."""
+```
 
+The names below remain importable from `src.jobs.builder` (the backward-compat
+shim):
+
+```python
 def _classify(
     row: IndexRow,
     is_lossy_val: bool | None,
@@ -603,21 +726,34 @@ def _classify(
     output_root: Path,
     preset: PresetConfig,
 ) -> None:
-    """Classify a single row and write it to the index DB."""
+    """Classify a single row and write it to the index DB (alias of jobs.classify.classify)."""
 ```
 
 ---
 
-## `src/history/db.py`
+## `src/history/`
 
-SQLite history database wrapper.
+SQLite history database. The original single-file `db.py` was split into a
+`schema.py` shared module, a synchronous `ConversionDB`, and an async
+`DBWriteQueue`. `db.py` remains as a backward-compat shim that re-exports
+both classes.
 
-### Classes
+### `src/history/schema.py`
+
+```python
+CREATE_HISTORY_TABLE_SQL: str
+INSERT_OR_REPLACE_HISTORY_SQL: str
+
+def apply_history_pragmas(conn: sqlite3.Connection) -> None:
+    """Enable WAL mode and busy-timeout on the given connection."""
+```
+
+### `src/history/conversion_db.py`
 
 ```python
 class ConversionDB:
     def __init__(self, db_path: Path) -> None:
-        """Open SQLite connection with WAL mode and busy timeout."""
+        """Open the SQLite connection and ensure the history table exists."""
 
     def get_record(self, source: str, dest: str) -> Optional[dict]:
         """Return history row matching (source_path, dest_path), or None."""
@@ -647,13 +783,46 @@ class ConversionDB:
         """Close the SQLite connection."""
 ```
 
+### `src/history/write_queue.py`
+
+```python
+class DBWriteQueue:
+    """Async writer for conversion history.
+
+    Workers push log entries onto a queue; a single background thread
+    drains the queue and writes to SQLite sequentially, eliminating all
+    concurrent write contention.
+    """
+
+    def __init__(self, db_path: Path) -> None:
+        """Initialize the writer thread."""
+
+    def log_conversion(
+        self,
+        source: str,
+        dest: str,
+        job_type: str,
+        command: Optional[str],
+        status: str,
+        error_msg: Optional[str] = None,
+        stdout: Optional[str] = None,
+    ) -> None:
+        """Queue a conversion log entry for async writing."""
+
+    def flush(self) -> None:
+        """Signal the writer to shut down and wait for it to finish (up to 5s)."""
+```
+
 ---
 
-## `src/execution/runner.py`
+## `src/execution/`
 
-Job execution with thread/process pools.
+Job execution with thread/process pools. The package is split into
+`events.py`, `event_drain.py`, `run_job.py`, and `run_all.py`, with
+`runner.py` re-exporting the same public/private names for backwards
+compatibility.
 
-### Enums
+### Enums (`src/execution/events.py`)
 
 ```python
 class JobEventKind(str, Enum):
@@ -663,41 +832,96 @@ class JobEventKind(str, Enum):
     ACTIVITY = "activity"
 ```
 
-### Functions
+### Queue helpers (`src/execution/events.py`)
 
 ```python
-def run_all(
-    jobs: list[ConversionJob],
-    backend: ConversionBackend,
-    db: ConversionDB,
-    force: bool,
-    workers: int,
-    worker_model: str,
-    verbose: bool,
-    progress: ProgressSink,
-) -> tuple[dict[str, int], list[Future], Queue]:
-    """Execute jobs using thread or process pool."""
+def _make_event_queue(worker_model: str) -> Queue:
+    """Build a thread/process-safe queue for cross-worker UI events.
+
+    For process workers a ``multiprocessing.Manager().Queue()`` is used
+    because raw ``multiprocessing.Queue`` cannot be pickled into a spawn-based
+    worker (Windows default).
+    """
+
+def _push_log_event(events: Queue, line: str) -> None:
+    """Module-level picklable sink used by workers to enqueue verbose lines."""
+
+def _build_stream_callback(events: Queue) -> Optional[Callable[[str], None]]:
+    """Build a stream_callback that forwards verbose lines to the main thread."""
+```
+
+### `src/execution/run_job.py`
+
+```python
+def _verify_output_file(job: ConversionJob) -> tuple[bool, str | None]:
+    """Verify the output file exists and has non-zero size."""
 
 def run_job(
     job: ConversionJob,
     backend: ConversionBackend,
     db_path: str,
+    write_queue: DBWriteQueue,
     force: bool,
     stream_callback: Optional[Callable[[str], None]],
     events: Optional[Queue] = None,
 ) -> tuple[JobStatus, str, str | None]:
-    """Execute a single ConversionJob."""
+    """Execute a single ConversionJob (copy / convert / skip branches).
 
+    Each branch is responsible for calling ``write_queue.log_conversion(...)``
+    after a successful convert/copy so the writer thread picks it up.
+    """
+```
+
+### `src/execution/event_drain.py`
+
+```python
 def _drain_events_into_ui(
     events: Queue,
     progress: ProgressSink,
     job_tasks: dict[str, SubtaskID],
 ) -> None:
-    """Drain queued events and apply UI updates."""
+    """Drain queued events and apply UI updates on the calling thread.
 
-def _verify_output_file(job: ConversionJob) -> tuple[bool, str | None]:
-    """Verify output file exists and has non-zero size."""
+    STARTED adds an indeterminate per-job bar; FINISHED removes it and
+    advances the master bar; ACTIVITY updates the activity indicator;
+    LOG appends a message to the log area.
+    """
+
+def _run_event_drain_thread(
+    events: Queue,
+    progress: ProgressSink,
+    job_tasks: dict[str, SubtaskID],
+    stop_event: Event,
+) -> None:
+    """Long-lived background drain thread used while run_all is active."""
 ```
+
+### `src/execution/run_all.py`
+
+```python
+def run_all(
+    jobs: list[ConversionJob],
+    backend: ConversionBackend,
+    db_path: str,
+    force: bool,
+    workers: int,
+    worker_model: str,
+    verbose: bool,
+    progress: ProgressSink,
+    print_to_terminal: bool = False,
+) -> tuple[dict[str, int], list[Future], Queue, DBWriteQueue]:
+    """Execute jobs using thread or process pool.
+
+    Returns ``(summary, futures, events_queue, write_queue)``. The caller
+    MUST call ``write_queue.flush()`` after all futures complete so the
+    background writer thread exits cleanly.
+    """
+```
+
+The signature has changed from earlier versions: ``db`` is no longer a
+``ConversionDB`` instance — the orchestrator now constructs an async
+``DBWriteQueue`` itself and passes it to each worker, with ``db_path`` as a
+plain string.
 
 ---
 

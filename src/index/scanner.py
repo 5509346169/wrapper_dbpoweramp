@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from src.models.types import AUDIO_EXTENSIONS
 from src.ui.progress_view import ProgressSink
+
+if TYPE_CHECKING:
+    from src.index.scan_cache import ScanCache
+
+# Re-exported for callers that build IndexRow objects directly.
+ScannedFile = tuple[Path, int, float, str]
 
 
 @dataclass(frozen=False, slots=True)
@@ -24,25 +31,68 @@ class IndexRow:
     is_lossy: Optional[bool] = None
 
 
-def _discover_audio_files(input_path: Path, excludes: list[str]) -> list[Path]:
-    """Return sorted list of audio files under input_path.
+def _discover_audio_files(
+    input_path: Path, excludes: list[str]
+) -> list[tuple[Path, int, float]]:
+    """Walk ``input_path`` with ``os.scandir`` and return audio file metadata.
 
-    Mirrors the public ``discover_audio_files`` in ``jobs/builder.py:13-37``.
+    Returns a list of ``(path, size, mtime)`` tuples so callers don't need to
+    re-stat each file. ``os.scandir`` is significantly faster than
+    ``Path.rglob`` on Windows because the underlying ``FindNextFileW`` call
+    returns directory entries with cached file attributes in a single syscall
+    per entry (size, mtime, is_dir, etc.). ``Path.rglob`` walks the tree and
+    then performs a separate ``stat()`` for each path to determine whether it's
+    a directory, doubling the syscall count.
+
+    Excludes are matched against directory basenames (the directory is
+    skipped before recursion). The output is sorted by path for deterministic
+    ordering across runs.
     """
     if input_path.is_file():
-        return [input_path]
+        try:
+            st = input_path.stat()
+        except OSError:
+            return []
+        return [(input_path, st.st_size, st.st_mtime)]
 
     exclude_set = set(excludes)
-    audio_files: list[Path] = []
+    # AUDIO_EXTENSIONS is already lowercase; preserve it as a tuple for fast
+    # str.endswith(tuple) checks in the walker.
+    audio_suffixes: tuple[str, ...] = tuple(AUDIO_EXTENSIONS)
+    results: list[tuple[Path, int, float]] = []
 
-    for item in input_path.rglob("*"):
-        if item.is_dir():
+    # Iterative DFS using a stack. We avoid Path.rglob because it stats each
+    # yielded entry twice (once to enumerate, once via is_dir).
+    stack: list[str] = [str(input_path)]
+    while stack:
+        current = stack.pop()
+        try:
+            with os.scandir(current) as it:
+                for entry in it:
+                    name = entry.name
+                    # Fast path: directories first — entry.is_dir() uses cached
+                    # attributes from FindNextFileW on Windows.
+                    is_dir = entry.is_dir(follow_symlinks=False)
+                    if is_dir:
+                        if name in exclude_set:
+                            continue
+                        stack.append(entry.path)
+                        continue
+                    # Files: filter by extension using the C-level endswith.
+                    if not name.lower().endswith(audio_suffixes):
+                        continue
+                    # Cached stat from the same DirEntry handle — no extra syscall.
+                    try:
+                        st = entry.stat(follow_symlinks=False)
+                    except OSError:
+                        continue
+                    results.append((Path(entry.path), st.st_size, st.st_mtime))
+        except (PermissionError, FileNotFoundError, OSError):
+            # Skip directories we can't read rather than aborting the whole scan.
             continue
-        if item.suffix.lower() in AUDIO_EXTENSIONS:
-            if item.parent.name not in exclude_set:
-                audio_files.append(item)
 
-    return sorted(audio_files)
+    results.sort(key=lambda item: str(item[0]))
+    return results
 
 
 def _collect_sidecar_basenames(
@@ -73,7 +123,8 @@ def scan_with_progress(
     excludes: list[str],
     preset,
     progress: ProgressSink,
-    audio_files: list[Path] | None = None,
+    audio_files: list[tuple[Path, int, float]] | None = None,
+    cache: "ScanCache | None" = None,
 ) -> tuple[list[IndexRow], dict[Path, str]]:
     """Walk ``input_path`` once, collecting file stats and sidecar candidates.
 
@@ -86,9 +137,15 @@ def scan_with_progress(
         excludes: Directory basenames to skip during the walk.
         preset: ``PresetConfig`` — used to determine which sidecar patterns to look for.
         progress: ``ProgressSink`` for live reporting.
-        audio_files: Optional pre-discovered list of audio files. If None, the function
-            will discover them internally (performing a fresh rglob walk). Passing the
-            list avoids a duplicate directory traversal.
+        audio_files: Optional pre-discovered list of ``(path, size, mtime)``
+            tuples from :func:`_discover_audio_files`. If None, the function
+            will discover them internally (performing a fresh tree walk).
+            Passing the list avoids a duplicate directory traversal AND a
+            redundant ``stat()`` per file — size and mtime come from the
+            scandir-level attributes.
+        cache: Optional ``ScanCache``. When provided, each scanned file
+            (with sidecars) is written into the cache so the probe phase
+            can skip the directory walk entirely on the next read.
 
     Returns:
         ``(rows, sidecar_map)`` where ``rows`` is a list of ``IndexRow`` and
@@ -104,25 +161,57 @@ def scan_with_progress(
     lyrics_policy = getattr(preset, "lyrics", None) if preset is not None else None
     covers_policy = getattr(preset, "covers", None) if preset is not None else None
 
-    for infile in audio_files:
-        stat = infile.stat()
+    for infile, file_size, mtime in audio_files:
         sidecar_basenames = _collect_sidecar_basenames(infile, lyrics_policy, covers_policy)
         sidecar_map[infile] = sidecar_basenames
+        if cache is not None:
+            cache.add(
+                source_path=str(infile),
+                file_size=file_size,
+                mtime=mtime,
+                sidecar_files=sidecar_basenames,
+            )
         rows.append(
             IndexRow(
                 source_path=str(infile),
                 dest_path="",
                 job_type="",
-                file_size=stat.st_size,
+                file_size=file_size,
                 sidecar_files=sidecar_basenames,
-                mtime=stat.st_mtime,
+                mtime=mtime,
             )
         )
         if hasattr(progress, "log_file"):
-            progress.log_file(f"  {infile.name} ({_format_bytes(stat.st_size)})")
+            progress.log_file(f"  {infile.name} ({_format_bytes(file_size)})")
         progress.advance()
 
+    if cache is not None:
+        cache.commit()
+
     return rows, sidecar_map
+
+
+def load_rows_from_cache(cache: "ScanCache") -> list[IndexRow]:
+    """Build ``IndexRow`` objects from a ``ScanCache``.
+
+    Used by the probe phase to skip the directory walk entirely: scan
+    produced the cache, probe reads rows back as ``IndexRow`` objects
+    with ``dest_path=""`` and ``job_type=""`` (the same shape
+    ``scan_with_progress`` would have returned after a fresh walk).
+    """
+    rows: list[IndexRow] = []
+    for source_path, file_size, mtime, sidecar_files in cache.iter_files():
+        rows.append(
+            IndexRow(
+                source_path=source_path,
+                dest_path="",
+                job_type="",
+                file_size=file_size,
+                sidecar_files=sidecar_files,
+                mtime=mtime,
+            )
+        )
+    return rows
 
 
 def _format_bytes(num_bytes: int) -> str:

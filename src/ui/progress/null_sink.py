@@ -33,3 +33,6 @@ class NullProgressSink:
 
     def set_activity(self, activity: str) -> None:
         pass
+
+    def set_phase_label(self, label: str) -> None:
+        pass

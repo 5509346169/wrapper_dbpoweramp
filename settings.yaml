@@ -22,7 +22,7 @@ history:
 
 execution:
   default_workers: 4               # conversion pool size
-  probe_workers: 8                 # ffprobe pre-flight pool size (I/O bound, can be higher)
+  probe_workers: 16                # mutagen probe pool size (pure I/O, can be higher)
   worker_model: "thread"           # "thread" | "process"
 
 logging:

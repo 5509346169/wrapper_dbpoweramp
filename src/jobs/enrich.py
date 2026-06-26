@@ -12,14 +12,13 @@ Two entry points:
 
 from __future__ import annotations
 
-from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from src.audio.inspector import (
-    _is_lossy_by_ext,
-    _is_lossy_by_folder,
-    _is_lossy_by_mutagen,
+    CascadeTier,
+    cascade_with_tier,
     probe_many,
 )
 from src.index.builder import IndexBuilder
@@ -47,13 +46,16 @@ def enrich_index_rows_streaming(
 ) -> list[Path]:
     """Stream-probe files, write rows to the index DB incrementally, and report live progress.
 
-    Detection cascade (phases shown only when they have work):
-      1. Extension — non-.m4a files only; .m4a is always ambiguous and skipped.
-      2. Folder  — non-.m4a files not resolved by extension.
-      3. Mutagen — all remaining files (including all .m4a).
+    Detection cascade runs **per file** inside each worker thread:
+      1. Extension — Tier 1 resolves immediately for unambiguous extensions.
+      2. Folder    — Tier 2 resolves by parent-directory name if Tier 1 was unknown.
+      3. Mutagen   — Tier 3 (the only filesystem-bound tier) is the fallback.
 
-    Each phase gets its own progress bar so the user sees meaningful progress at
-    each stage rather than a single bar for the combined total.
+    Each file walks the cascade independently in parallel. The progress
+    bar stays as a single "Probing" bar, and its phase label flips
+    (Extension -> Folder -> Mutagen) based on which tier resolved the
+    most recent file — this lets the user see *what* the workers are
+    currently doing without fragmenting the display into three bars.
 
     Args:
         scan_rows:     Rows from the scanner (source_path, file_size, sidecar_files, mtime set).
@@ -69,9 +71,11 @@ def enrich_index_rows_streaming(
     total = len(files)
 
     lossy_files_found: list[Path] = []
-    resolved: set[Path] = set()
+    # Tier counters are racy across worker threads but the worst case
+    # is a slightly off summary number — fine for telemetry.
+    tier_counts: dict[CascadeTier, int] = {t: 0 for t in CascadeTier}
 
-    def _handle_result(f: Path, is_lossy_val: bool | None) -> None:
+    def _handle_result(f: Path, is_lossy_val: bool | None, tier: CascadeTier | None) -> None:
         row = path_to_row[f]
         classify(
             row, is_lossy_val, lossy_action, no_lossy_check,
@@ -82,77 +86,58 @@ def enrich_index_rows_streaming(
         if is_lossy_val:
             lossy_files_found.append(f)
         if hasattr(progress, "log_file"):
-            progress.log_file(f"  {f.name} -> {row.job_type} {'[LOSSY]' if is_lossy_val else ''}")
+            tier_tag = f"[{tier.value}]" if tier is not None else ""
+            progress.log_file(f"  {tier_tag:>10} {f.name} -> {row.job_type} {'[LOSSY]' if is_lossy_val else ''}")
         progress.advance()
-
-    def _phase_mutagen(files_to_probe: list[Path]) -> None:
-        if not files_to_probe:
-            return
-        if hasattr(progress, "log_phase"):
-            progress.log_phase("Mutagen")
-        else:
-            progress.log(f"Probing {len(files_to_probe)} files with mutagen ({probe_workers} workers)...")
-
-        def probe_one(file: Path) -> tuple[Path, bool]:
-            return (file, _is_lossy_by_mutagen(file))
-
-        with ThreadPoolExecutor(max_workers=probe_workers) as executor:
-            future_map: dict[Future, Path] = {
-                executor.submit(probe_one, f): f for f in files_to_probe
-            }
-            for future in as_completed(future_map):
-                infile = future_map[future]
-                try:
-                    _, is_lossy_val = future.result()
-                except Exception:
-                    is_lossy_val = None
-                _handle_result(infile, is_lossy_val)
 
     if no_lossy_check:
         progress.start_phase("Probing", total=total)
         for f in files:
-            _handle_result(f, None)
-    else:
-        # Single-pass split: classify each file by extension and reuse the
-        # boolean flag — avoids the previous O(n*m4a) ``f in set(m4a_files)``
-        # comparison that became a hotspot on 20k+ file inputs.
-        file_is_m4a: dict[Path, bool] = {f: (f.suffix.lower() == ".m4a") for f in files}
-        m4a_files = [f for f, is_m4a in file_is_m4a.items() if is_m4a]
-        non_m4a_files = [f for f, is_m4a in file_is_m4a.items() if not is_m4a]
+            _handle_result(f, None, None)
+        progress.stop()
+        return lossy_files_found
 
-        # ── Phase 1: Extension (non-.m4a only) ──────────────────────────────
-        if non_m4a_files:
-            progress.start_phase("Extension", total=len(non_m4a_files))
-            for f in non_m4a_files:
-                ext_val = _is_lossy_by_ext(f)
-                if ext_val is not None:
-                    _handle_result(f, ext_val)
-                    resolved.add(f)
-                else:
-                    progress.advance()
+    # ── Per-file cascade ────────────────────────────────────────────────
+    # All files go into a single ThreadPoolExecutor. Each worker runs the
+    # full three-tier cascade on its assigned file. Tier 1 and Tier 2 are
+    # zero-I/O (string ops only) so they finish in microseconds; only
+    # Tier 3 actually opens the file. By parallelising across files
+    # rather than across tiers we avoid the previous "all 26k files
+    # race through Tier 1, then 25k sit idle while Tier 2 runs, then
+    # 24k sit idle while Tier 3 runs" pattern — every worker is always
+    # busy on the deepest tier its current file requires.
+    def probe_one(file: Path) -> tuple[Path, bool | None, CascadeTier]:
+        try:
+            is_lossy_val, tier = cascade_with_tier(file)
+            return file, is_lossy_val, tier
+        except Exception:
+            return file, None, CascadeTier.MUTAGEN
 
-        # ── Phase 2: Folder (non-.m4a not resolved by extension) ──────────────
-        remaining_non_m4a = [f for f in non_m4a_files if f not in resolved]
-        if remaining_non_m4a:
-            progress.start_phase("Folder", total=len(remaining_non_m4a))
-            for f in remaining_non_m4a:
-                folder_val = _is_lossy_by_folder(f)
-                if folder_val is not None:
-                    _handle_result(f, folder_val)
-                    resolved.add(f)
-                else:
-                    progress.advance()
+    def _label_for(tier: CascadeTier) -> str:
+        # Compact labels for the single progress bar.
+        return {
+            CascadeTier.EXTENSION: "Probing [Extension]",
+            CascadeTier.FOLDER: "Probing [Folder]",
+            CascadeTier.MUTAGEN: "Probing [Mutagen]",
+        }[tier]
 
-        # ── Phase 3: Mutagen (remaining non-.m4a + all .m4a) ──────────────────
-        remaining = [f for f in files if f not in resolved]
-        _phase_mutagen(remaining)
+    progress.start_phase("Probing [Extension]", total=total)
 
-        if not hasattr(progress, "log_file"):
-            progress.log(f"Probing done. {len(lossy_files_found)} lossy file(s) found.")
-        elif lossy_files_found:
-            progress.log_file(f"  Total lossy files: {len(lossy_files_found)}")
+    with ThreadPoolExecutor(max_workers=probe_workers) as executor:
+        for infile, is_lossy_val, tier in executor.map(probe_one, files):
+            tier_counts[tier] += 1
+            # Update the bar label to reflect which tier resolved the
+            # most recent file. Subsequent calls with the same label
+            # are cheap (set + _refresh).
+            progress.set_phase_label(_label_for(tier))
+            _handle_result(infile, is_lossy_val, tier)
 
-    progress.stop()
+    progress.log(
+        f"Probe complete: {tier_counts[CascadeTier.EXTENSION]} extension, "
+        f"{tier_counts[CascadeTier.FOLDER]} folder, "
+        f"{tier_counts[CascadeTier.MUTAGEN]} mutagen, "
+        f"{len(lossy_files_found)} lossy"
+    )
     return lossy_files_found
 
 

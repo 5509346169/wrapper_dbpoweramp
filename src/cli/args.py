@@ -142,7 +142,7 @@ def _add_execution_args(parser: "ArgumentParser") -> None:
 
 
 def _add_mode_args(parser: "ArgumentParser") -> None:
-    """Add --dry-run, --list-lossy, --build-index, --index."""
+    """Add --dry-run, --list-lossy, --build-index, --index, --no-scan-cache."""
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -164,6 +164,17 @@ def _add_mode_args(parser: "ArgumentParser") -> None:
         type=Path,
         metavar="PATH",
         help="Use pre-built index database as input (skips filesystem scan/probe)",
+    )
+    parser.add_argument(
+        "--no-scan-cache",
+        action="store_true",
+        dest="no_scan_cache",
+        help=(
+            "Disable the per-run scan cache (./tmp/scan_cache_*.db). "
+            "By default the scan phase writes a small SQLite snapshot of "
+            "the discovered files so the probe phase can skip the "
+            "directory walk. Pass this flag to force a fresh walk every run."
+        ),
     )
 
 
