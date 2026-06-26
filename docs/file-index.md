@@ -20,6 +20,8 @@ The index captures:
 4. **Job types** - convert, copy, or skip
 5. **Sidecar information** - Associated lyrics and cover files
 
+The companion **scan cache** (`./tmp/scan_cache_*.db`) captures columns 1 and 5 only (path+size+mtime+sidecar) so the filesystem walk can be skipped on subsequent runs.
+
 ---
 
 ## Schema
@@ -55,6 +57,36 @@ CREATE TABLE index_entries (
 ---
 
 ## Lifecycle
+
+### Scan Cache
+
+Before the full index, the tool tries to reuse a **per-run scan cache** stored in `./tmp/scan_cache_*.db`. This cache stores only the path+size+mtime+sidecar columns — no probe results — so the probe phase is never influenced by stale data.
+
+```
+Input + Excludes  ──►  sha256(...)[:16]  ──►  scan_cache_<ts>_<sig>.db
+```
+
+The cache is created fresh each time the directory is walked, and the filename includes the input signature so `open_latest()` can verify the cache matches the current CLI args before trusting it. Pass `--no-scan-cache` to disable and always walk the filesystem.
+
+```
+# First run: full walk, cache is written
+python main.py -I ~/Music -p qaac-cvbr-256
+  [Scanning] ...           # cache miss, walk happens
+  [Probing]  ...           # mutagen opens every file
+  ...
+
+# Second run: walk is skipped entirely
+python main.py -I ~/Music -p qaac-cvbr-256
+  [Scanning (cached)]  1234/1234  [cached]  # cache hit
+  [Probing]  ...           # still runs — lossy status not cached
+  ...
+```
+
+Cache lifecycle:
+- **Written by**: scan phase (when cache misses)
+- **Read by**: scan phase on subsequent runs (when cache hits)
+- **Never deleted** automatically — it's a persistent snapshot. Delete manually with `rm ./tmp/scan_cache_*.db` to force a fresh walk.
+- The `--no-scan-cache` flag skips both read and write of the cache.
 
 ### Creation
 

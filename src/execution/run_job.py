@@ -36,7 +36,6 @@ def run_job(
     job: ConversionJob,
     backend: ConversionBackend,
     db_path: str,
-    write_queue: DBWriteQueue,
     force: bool,
     stream_callback: Optional[Callable[[str], None]],
     events: Optional[Queue] = None,
@@ -47,8 +46,7 @@ def run_job(
     Args:
         job: The conversion job to execute.
         backend: The conversion backend to use.
-        db_path: Path to the history SQLite database (for resume checks).
-        write_queue: Queue for async DB writes (serializes concurrent writes).
+        db_path: Path to the history SQLite database (for resume checks and logging).
         force: If True, skip resume checks and force re-processing.
         stream_callback: Optional callback for streaming output line-by-line.
         events: Optional cross-process/thread queue for UI events. Workers push
@@ -59,7 +57,7 @@ def run_job(
     Returns:
         A tuple of (status, infile_name, error_msg).
     """
-    infile_name = job.infile.name
+    infile_name = str(job.infile)
 
     db = ConversionDB(Path(db_path))
 
@@ -90,7 +88,7 @@ def run_job(
                 else:
                     copy_lyrics(job.infile, job.outfile, job.preset.lyrics)
                     copy_covers(job.infile, job.outfile, job.preset.covers)
-                    write_queue.log_conversion(
+                    db.log_conversion(
                         source=str(job.infile),
                         dest=str(job.outfile),
                         job_type=job.job_type,
@@ -122,7 +120,7 @@ def run_job(
                 else:
                     copy_lyrics(job.infile, job.outfile, job.preset.lyrics)
                     copy_covers(job.infile, job.outfile, job.preset.covers)
-                    write_queue.log_conversion(
+                    db.log_conversion(
                         source=str(job.infile),
                         dest=str(job.outfile),
                         job_type=job.job_type,

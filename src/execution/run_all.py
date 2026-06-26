@@ -65,9 +65,9 @@ def run_all(
     summary: dict[str, int] = {"success": 0, "skipped": 0, "failed": 0}
 
     if not jobs:
-        return summary, [], _make_event_queue(worker_model), DBWriteQueue(Path(db_path))
+        return summary, [], _make_event_queue(worker_model), DBWriteQueue(Path(db_path), worker_model)
 
-    write_queue = DBWriteQueue(Path(db_path))
+    write_queue = DBWriteQueue(Path(db_path), worker_model)
     events = _make_event_queue(worker_model)
 
     if print_to_terminal:
@@ -79,8 +79,6 @@ def run_all(
         stream_cb = _build_stream_callback(events) if verbose else None
 
     ExecutorCls = ThreadPoolExecutor if worker_model == "thread" else ProcessPoolExecutor
-
-    futures: list[Future] = []
 
     # Track in-flight jobs for proper subtask bar management
     job_tasks: dict[str, SubtaskID] = {}
@@ -102,7 +100,6 @@ def run_all(
                     job,
                     backend,
                     db_path,
-                    write_queue,
                     force,
                     stream_cb,
                     events,

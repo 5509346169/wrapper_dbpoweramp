@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from queue import Empty, Queue
+from queue import Empty, Queue as StdQueue
 from typing import Optional
 
 from src.history.schema import (
@@ -19,6 +19,29 @@ from src.history.schema import (
     INSERT_OR_REPLACE_HISTORY_SQL,
     apply_history_pragmas,
 )
+
+
+def _make_write_queue(worker_model: str) -> tuple[StdQueue, bool]:
+    """Build a picklable queue for conversion log entries.
+
+    For 'process' workers (Windows spawn / forking), threading Queue objects
+    cannot be pickled because they contain _thread.lock.  We fall back to
+    multiprocessing.Manager().Queue() which provides a proxy that is safe to
+    send across process boundaries.
+
+    Args:
+        worker_model: 'thread' or 'process'.
+
+    Returns:
+        A (queue, is_manager_queue) tuple.  is_manager_queue is True when
+        the queue is a Manager proxy (caller must manage its lifecycle).
+    """
+    if worker_model == "process":
+        from multiprocessing import get_context
+
+        manager = get_context().Manager()
+        return manager.Queue(), True
+    return StdQueue(), False
 
 
 class _LogEntryKind(str, Enum):
@@ -49,14 +72,18 @@ class DBWriteQueue:
     all concurrent write contention.
     """
 
-    def __init__(self, db_path: Path) -> None:
+    def __init__(self, db_path: Path, worker_model: str = "thread") -> None:
         """Initialize the writer thread.
 
         Args:
             db_path: Path to the SQLite database file.
+            worker_model: 'thread' (uses threading Queue) or 'process'
+                (uses multiprocessing.Manager Queue so the object is
+                safe to pass through ProcessPoolExecutor.submit).
         """
         self._db_path = db_path
-        self._queue: Queue = Queue()
+        queue, _is_manager_queue = _make_write_queue(worker_model)
+        self._queue: StdQueue = queue
         self._stop_event = threading.Event()
         self._thread = threading.Thread(target=self._writer_loop, daemon=True)
         self._thread.start()
