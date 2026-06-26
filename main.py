@@ -14,6 +14,7 @@ from src.config.preset_loader import get_preset, load_presets
 from src.config.settings_loader import load_settings
 from src.exceptions import BackendError, PresetNotFoundError
 from src.execution.runner import run_all
+from src.history.db import ConversionDB
 from src.index.builder import IndexBuilder
 from src.index.cleanup import cleanup_index
 from src.index.scan_cache import ScanCache
@@ -294,7 +295,7 @@ def _run_from_index(
     old_sigint = signal.signal(signal.SIGINT, _signal_handler)
     old_sigterm = signal.signal(signal.SIGTERM, _signal_handler)
 
-    conv_summary: dict[str, int] = {}
+    conv_summary: dict[str, int] = {"success": 0, "skipped": 0, "failed": 0}
     exc_info: str | None = None
 
     try:
@@ -303,6 +304,26 @@ def _run_from_index(
         workers = args.workers if args.workers is not None else settings.execution.default_workers
         worker_model = args.worker_model if args.worker_model is not None else settings.execution.worker_model
 
+        # Pre-filter: identify already-converted files before starting any progress bar.
+        pending_jobs: list[ConversionJob] = []
+        skipped_jobs: list[ConversionJob] = []
+        if not args.force:
+            db = ConversionDB(db_path)
+            for job in jobs:
+                dest_exists = job.outfile.exists()
+                dest_size = job.outfile.stat().st_size if dest_exists else None
+                if db.should_skip(
+                    str(job.infile), str(job.outfile), job_type=job.job_type,
+                    dest_file_exists=dest_exists, dest_file_size=dest_size,
+                ):
+                    skipped_jobs.append(job)
+                else:
+                    pending_jobs.append(job)
+            db.close()
+        else:
+            pending_jobs = list(jobs)
+            skipped_jobs = []
+
         total_bytes = summary_info["total_bytes"]
         # Use NullProgressSink for verbose mode to disable progress bar
         if args.verbose:
@@ -310,11 +331,19 @@ def _run_from_index(
             progress_active = False
         else:
             sink = RichProgressSink(total_bytes=total_bytes)
-            sink.start_phase("Converting", total=len(jobs))
+            if skipped_jobs:
+                sink.start_phase("Skipping", total=len(skipped_jobs))
+                for job in skipped_jobs:
+                    sink.advance()
+                    if hasattr(sink, "log_file"):
+                        sink.log_file(f"  {job.infile.name}")
+                sink.stop_phase()
+                sink.log(f"Skipped {len(skipped_jobs)} already-converted file(s)")
+            sink.start_phase("Converting", total=len(pending_jobs))
             progress_active = True
 
         conv_summary, futures, events, write_queue = run_all(
-            jobs=jobs,
+            jobs=pending_jobs,
             backend=backend,
             db_path=str(db_path),
             force=args.force,
@@ -348,6 +377,9 @@ def _run_from_index(
         if progress_active:
             sink.stop()
         write_queue.flush()
+
+        # Add pre-filtered skips to the summary (pool-level skips may also exist).
+        conv_summary["skipped"] += len(skipped_jobs)
 
         print()
         print(
@@ -442,7 +474,7 @@ def _main() -> None:
     old_sigint = signal.signal(signal.SIGINT, _signal_handler)
     old_sigterm = signal.signal(signal.SIGTERM, _signal_handler)
 
-    summary: dict[str, int] = {}
+    summary: dict[str, int] = {"success": 0, "skipped": 0, "failed": 0}
     exc_info: str | None = None
 
     # Track the scan-cache so we can close it on exit (regardless of outcome).
@@ -674,6 +706,26 @@ def _main() -> None:
         workers = args.workers if args.workers is not None else settings.execution.default_workers
         worker_model = args.worker_model if args.worker_model is not None else settings.execution.worker_model
 
+        # Pre-filter: identify already-converted files before starting any progress bar.
+        pending_jobs: list[ConversionJob] = []
+        skipped_jobs: list[ConversionJob] = []
+        if not args.force:
+            db = ConversionDB(db_path)
+            for job in jobs:
+                dest_exists = job.outfile.exists()
+                dest_size = job.outfile.stat().st_size if dest_exists else None
+                if db.should_skip(
+                    str(job.infile), str(job.outfile), job_type=job.job_type,
+                    dest_file_exists=dest_exists, dest_file_size=dest_size,
+                ):
+                    skipped_jobs.append(job)
+                else:
+                    pending_jobs.append(job)
+            db.close()
+        else:
+            pending_jobs = list(jobs)
+            skipped_jobs = []
+
         total_bytes = sum(row.file_size for row in rows)
         # Use NullProgressSink for verbose mode to disable progress bar
         if args.verbose:
@@ -681,10 +733,18 @@ def _main() -> None:
             progress_active = False
         else:
             sink = RichProgressSink(total_bytes=total_bytes)
-            sink.start_phase("Converting", total=len(jobs))
+            if skipped_jobs:
+                sink.start_phase("Skipping", total=len(skipped_jobs))
+                for job in skipped_jobs:
+                    sink.advance()
+                    if hasattr(sink, "log_file"):
+                        sink.log_file(f"  {job.infile.name}")
+                sink.stop_phase()
+                sink.log(f"Skipped {len(skipped_jobs)} already-converted file(s)")
+            sink.start_phase("Converting", total=len(pending_jobs))
             progress_active = True
         summary, futures, events, write_queue = run_all(
-            jobs=jobs,
+            jobs=pending_jobs,
             backend=backend,
             db_path=str(db_path),
             force=args.force,
@@ -719,6 +779,9 @@ def _main() -> None:
         if progress_active:
             sink.stop()
         write_queue.flush()
+
+        # Add pre-filtered skips to the summary (pool-level skips may also exist).
+        summary["skipped"] += len(skipped_jobs)
 
         # 13. Print final summary
         print()

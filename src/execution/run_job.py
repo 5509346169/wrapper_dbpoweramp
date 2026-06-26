@@ -88,21 +88,25 @@ def run_job(
                 else:
                     copy_lyrics(job.infile, job.outfile, job.preset.lyrics)
                     copy_covers(job.infile, job.outfile, job.preset.covers)
+                    file_size = job.outfile.stat().st_size
                     db.log_conversion(
                         source=str(job.infile),
                         dest=str(job.outfile),
                         job_type=job.job_type,
                         command=None,
                         status="SUCCESS",
+                        file_size=file_size,
                     )
                     status = "SUCCESS"
                     error_msg = None
 
         elif job.job_type == "convert":
             dest_exists = job.outfile.exists()
+            dest_size = job.outfile.stat().st_size if dest_exists else None
 
             if not force and db.should_skip(
-                str(job.infile), str(job.outfile), job_type="convert", dest_file_exists=dest_exists
+                str(job.infile), str(job.outfile), job_type="convert",
+                dest_file_exists=dest_exists, dest_file_size=dest_size,
             ):
                 status = "SKIPPED"
                 error_msg = None
@@ -120,6 +124,7 @@ def run_job(
                 else:
                     copy_lyrics(job.infile, job.outfile, job.preset.lyrics)
                     copy_covers(job.infile, job.outfile, job.preset.covers)
+                    output_size = job.outfile.stat().st_size
                     db.log_conversion(
                         source=str(job.infile),
                         dest=str(job.outfile),
@@ -128,6 +133,7 @@ def run_job(
                         status=result.status,
                         error_msg=result.error_msg,
                         stdout=result.stdout,
+                        file_size=output_size,
                     )
 
             status = result.status

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import PurePath
 from queue import Empty, Queue
 from threading import Event, Thread
 
@@ -37,9 +38,11 @@ def _drain_events_into_ui(
         elif kind == JobEventKind.ACTIVITY:
             progress.set_activity(infile_name)
         elif kind == JobEventKind.STARTED:
-            # Only add bar if not already tracking this job (prevents duplicates)
+            # Only add bar if not already tracking this job (prevents duplicates).
+            # Use basename for the bar description so the display stays compact.
+            bar_description = PurePath(infile_name).name
             if infile_name not in job_tasks:
-                job_tasks[infile_name] = progress.start_subtask(infile_name)
+                job_tasks[infile_name] = progress.start_subtask(bar_description)
         elif kind == JobEventKind.FINISHED:
             subtask_id = job_tasks.pop(infile_name, None)
             if subtask_id is not None:
@@ -60,4 +63,4 @@ def _run_event_drain_thread(
     """
     while not stop_event.is_set():
         _drain_events_into_ui(events, progress, job_tasks)
-        stop_event.wait(timeout=0.1)  # Poll every 100ms
+        stop_event.wait(timeout=0.02)  # Poll every 20ms for responsive bar updates

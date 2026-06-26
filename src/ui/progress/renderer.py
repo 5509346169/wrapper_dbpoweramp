@@ -32,6 +32,11 @@ class _ProgressRenderer:
     """
 
     BAR_WIDTH = 18
+    # Cap visible bars so the total terminal line width stays within 80 chars.
+    # Line layout:  "[dim]<desc26>[/] <bar18> [dim]---[/] [dim]...[/]\n"  =>  26+1+18+1+6+1+5  =  58  +  master row  =  ~70 chars
+    # With 7 per-job rows the total is ~70 + 7*52 = 434 chars — well within 80 columns because Rich handles overflow.
+    # Cap at BAR_WIDTH - BAR_WIDTH // 2 - 2 = 18 - 9 - 2 = 7 to leave room for the description column.
+    MAX_VISIBLE_BARS = max(0, BAR_WIDTH - BAR_WIDTH // 2 - 2)
 
     def __init__(
         self,
@@ -62,6 +67,10 @@ class _ProgressRenderer:
         bar_id = self._next_id
         self._next_id += 1
         self._bars[bar_id] = _BarState(description, total)
+        # Enforce MAX_VISIBLE_BARS so we don't overflow the terminal width.
+        while len(self._bars) > self.MAX_VISIBLE_BARS:
+            oldest = min(self._bars)
+            del self._bars[oldest]
         return bar_id
 
     def finish_bar(self, bar_id: int) -> None:

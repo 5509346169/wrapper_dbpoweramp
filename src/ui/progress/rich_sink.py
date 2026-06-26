@@ -51,6 +51,7 @@ class RichProgressSink:
         self._live: Live | None = None
         self._renderer: _ProgressRenderer | None = None
         self._log_lines: deque[str] = deque(maxlen=30)
+        self._last_phase_label: str = ""
 
         # Throttle state for _refresh(): we update the Live renderable at
         # most every _MIN_REFRESH_INTERVAL seconds. Rich's Live thread
@@ -110,12 +111,23 @@ class RichProgressSink:
 
     def start_phase(self, name: str, total: int) -> None:
         """Begin a new phase with a master progress bar."""
+        # Stop any existing Live before creating a new one.  Without this,
+        # successive calls to start_phase (scan -> probe -> convert) leave
+        # orphaned Live instances whose cursors remain on the terminal,
+        # causing flickering and overlapping output.
+        if self._live is not None:
+            try:
+                self._live.__exit__(None, None, None)
+            except Exception:
+                pass
+            self._live = None
         self._renderer = _ProgressRenderer(
             total=total,
             total_bytes=self._total_bytes,
             console=self._console,
             phase_name=name,
         )
+        self._last_phase_label = name
         self._live = Live(
             self._make_renderable(),
             console=self._console,
@@ -195,7 +207,8 @@ class RichProgressSink:
 
     def set_phase_label(self, label: str) -> None:
         """Update the master bar's phase label without restarting the phase."""
-        if self._renderer is None:
+        if self._renderer is None or label == self._last_phase_label:
             return
+        self._last_phase_label = label
         self._renderer.set_phase_name(label)
         self._refresh()

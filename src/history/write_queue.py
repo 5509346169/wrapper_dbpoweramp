@@ -15,6 +15,7 @@ from queue import Empty, Queue as StdQueue
 from typing import Optional
 
 from src.history.schema import (
+    ADD_FILE_SIZE_COLUMN_SQL,
     CREATE_HISTORY_TABLE_SQL,
     INSERT_OR_REPLACE_HISTORY_SQL,
     apply_history_pragmas,
@@ -62,6 +63,7 @@ class _ConversionLogEntry:
     status: str
     error_msg: Optional[str]
     stdout: Optional[str]
+    file_size: Optional[int] = None
 
 
 class DBWriteQueue:
@@ -97,6 +99,7 @@ class DBWriteQueue:
         status: str,
         error_msg: Optional[str] = None,
         stdout: Optional[str] = None,
+        file_size: Optional[int] = None,
     ) -> None:
         """Queue a conversion log entry for async writing.
 
@@ -111,6 +114,7 @@ class DBWriteQueue:
             status: JobStatus value (e.g. 'SUCCESS', 'FAILED', 'SKIPPED').
             error_msg: Optional error message for failed jobs.
             stdout: Optional captured stdout for the job.
+            file_size: Optional file size in bytes of the output file.
         """
         entry = _ConversionLogEntry(
             source=source,
@@ -120,6 +124,7 @@ class DBWriteQueue:
             status=status,
             error_msg=error_msg,
             stdout=stdout,
+            file_size=file_size,
         )
         self._queue.put((_LogEntryKind.CONVERSION, entry))
 
@@ -129,6 +134,11 @@ class DBWriteQueue:
         apply_history_pragmas(conn)
         conn.execute(CREATE_HISTORY_TABLE_SQL)
         conn.commit()
+        try:
+            conn.execute(ADD_FILE_SIZE_COLUMN_SQL)
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass  # column already exists
 
         while not self._stop_event.is_set():
             try:
@@ -152,6 +162,7 @@ class DBWriteQueue:
                         entry.error_msg,
                         entry.stdout,
                         timestamp,
+                        entry.file_size,
                     ),
                 )
                 conn.commit()

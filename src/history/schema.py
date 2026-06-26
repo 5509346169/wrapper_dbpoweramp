@@ -19,15 +19,21 @@ CREATE_HISTORY_TABLE_SQL = (
     "    error_msg TEXT,"
     "    stdout TEXT,"
     "    timestamp TEXT,"
+    "    file_size INTEGER,"
     "    UNIQUE(source_path, dest_path)"
     ")"
+)
+
+# Idempotent migration for existing databases that predate the file_size column.
+ADD_FILE_SIZE_COLUMN_SQL = (
+    "ALTER TABLE history ADD COLUMN file_size INTEGER"
 )
 
 
 INSERT_OR_REPLACE_HISTORY_SQL = (
     "INSERT OR REPLACE INTO history "
-    "  (source_path, dest_path, job_type, command, status, error_msg, stdout, timestamp) "
-    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+    "  (source_path, dest_path, job_type, command, status, error_msg, stdout, timestamp, file_size) "
+    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
 )
 
 

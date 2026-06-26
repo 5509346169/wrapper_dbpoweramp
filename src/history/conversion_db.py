@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Optional
 
 from src.history.schema import (
+    ADD_FILE_SIZE_COLUMN_SQL,
     CREATE_HISTORY_TABLE_SQL,
     INSERT_OR_REPLACE_HISTORY_SQL,
     apply_history_pragmas,
@@ -33,6 +34,12 @@ class ConversionDB:
         with self._lock:
             self._conn.execute(CREATE_HISTORY_TABLE_SQL)
             self._conn.commit()
+            # Idempotent migration: column may already exist on existing databases.
+            try:
+                self._conn.execute(ADD_FILE_SIZE_COLUMN_SQL)
+                self._conn.commit()
+            except sqlite3.OperationalError:
+                pass  # column already exists
 
     def get_record(self, source: str, dest: str) -> Optional[dict]:
         """Return the row matching (source_path, dest_path), or None.
@@ -48,7 +55,7 @@ class ConversionDB:
         with self._lock:
             cursor = self._conn.execute(
                 "SELECT id, source_path, dest_path, job_type, command, status, "
-                "       error_msg, stdout, timestamp "
+                "       error_msg, stdout, timestamp, file_size "
                 "FROM history WHERE source_path = ? AND dest_path = ?",
                 (source, dest),
             )
@@ -65,6 +72,7 @@ class ConversionDB:
                 "error_msg": row[6],
                 "stdout": row[7],
                 "timestamp": row[8],
+                "file_size": row[9],
             }
 
     def log_conversion(
@@ -76,6 +84,7 @@ class ConversionDB:
         status: str,
         error_msg: Optional[str] = None,
         stdout: Optional[str] = None,
+        file_size: Optional[int] = None,
     ) -> None:
         """Insert or update a history row with the current UTC timestamp.
 
@@ -83,7 +92,7 @@ class ConversionDB:
         the existing row. The UNIQUE constraint on (source_path, dest_path)
         governs the replacement behavior.
 
-        Args:
+            Args:
             source: Source file path.
             dest: Destination file path.
             job_type: 'convert' or 'copy'.
@@ -91,17 +100,19 @@ class ConversionDB:
             status: JobStatus value (e.g. 'SUCCESS', 'FAILED', 'SKIPPED').
             error_msg: Optional error message for failed jobs.
             stdout: Optional captured stdout for the job.
+            file_size: Optional file size in bytes of the output file.
         """
         with self._lock:
             timestamp = datetime_now_utc_iso()
             self._conn.execute(
                 INSERT_OR_REPLACE_HISTORY_SQL,
-                (source, dest, job_type, command, status, error_msg, stdout, timestamp),
+                (source, dest, job_type, command, status, error_msg, stdout, timestamp, file_size),
             )
             self._conn.commit()
 
     def should_skip(
-        self, source: str, dest: str, job_type: str, dest_file_exists: bool
+        self, source: str, dest: str, job_type: str, dest_file_exists: bool,
+        dest_file_size: Optional[int] = None,
     ) -> bool:
         """Decide whether to skip a job based on history.
 
@@ -121,6 +132,9 @@ class ConversionDB:
             dest: Destination file path.
             job_type: 'convert' or 'copy'.
             dest_file_exists: Whether the destination file currently exists on disk.
+            dest_file_size: Optional current size in bytes of the destination file.
+                If provided and the stored size differs, the file is NOT skipped
+                (forced reconversion).
 
         Returns:
             True if the job should be skipped, False otherwise.
@@ -129,14 +143,19 @@ class ConversionDB:
             return False
         with self._lock:
             cursor = self._conn.execute(
-                "SELECT status FROM history "
+                "SELECT status, file_size FROM history "
                 "WHERE source_path = ? AND dest_path = ? AND job_type = ?",
                 (source, dest, job_type),
             )
             row = cursor.fetchone()
             if row is None:
                 return False
-            return row[0] == "SUCCESS"
+            if row[0] != "SUCCESS":
+                return False
+            stored_size = row[1]
+            if dest_file_size is not None and stored_size is not None and dest_file_size != stored_size:
+                return False
+            return True
 
     def close(self) -> None:
         """Close the SQLite connection."""

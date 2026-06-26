@@ -138,6 +138,7 @@ def enrich_index_rows_streaming(
         f"{tier_counts[CascadeTier.MUTAGEN]} mutagen, "
         f"{len(lossy_files_found)} lossy"
     )
+    progress.stop_phase()
     return lossy_files_found
 
 
