@@ -221,6 +221,16 @@ class RichProgressSink:
             self._renderer.set_phase_name(name)
         self.log(f"[{name}]")
 
+    def log_verify_result(self, infile: str, status: str, reason: str | None,
+                         fmt: str | None, duration_s: float | None) -> None:
+        """Log a post-write verify result: 'Okay' or 'Not - <reason>'."""
+        if status == "OK":
+            self.log(f"[verify] Okay")
+        elif status == "UNSUPPORTED":
+            self.log(f"[verify] Skipped - {reason or 'unsupported format'}")
+        else:
+            self.log(f"[verify] Not - {reason or 'unknown reason'}")
+
     def set_phase_label(self, label: str) -> None:
         """Update the master bar's phase label without restarting the phase."""
         if self._renderer is None or label == self._last_phase_label:

@@ -1,0 +1,32 @@
+namespace :serve do
+  desc "Run Jekyll locally on http://127.0.0.1:4000 with livereload."
+  task :livereload do
+    sh "bundle exec jekyll serve --livereload --incremental --host 127.0.0.1 --port 4000"
+  end
+end
+
+namespace :build do
+  desc "Build the site into _site/."
+  task :strict do
+    ENV["JEKYLL_ENV"] = "production"
+    sh "bundle exec jekyll build --trace --strict_front_matter"
+  end
+end
+
+desc "Build, then copy _site/ -> site/ (the Pages artifact directory)."
+task deploy: "build:strict" do
+  require "fileutils"
+  FileUtils.rm_rf("site")
+  FileUtils.mkdir_p("site")
+  FileUtils.cp_r("_site/.", "site")
+  puts "Copied _site/ -> site/ for deployment."
+end
+
+desc "Remove _site/ and site/."
+task :clean do
+  ["_site", "site", ".jekyll-cache", ".jekyll-metadata"].each do |dir|
+    FileUtils.rm_rf(dir) if File.directory?(dir)
+  end
+end
+
+task default: "serve:livereload"

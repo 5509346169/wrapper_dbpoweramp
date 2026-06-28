@@ -1,0 +1,18 @@
+{%- comment -%}
+  Callout — note, warning, audiophile. The audiophile variant uses a small
+  vinyl glyph; warning uses an exclamation; note uses an "i".
+{%- endcomment -%}
+{%- assign type = include.type | default: 'note' -%}
+<aside class="callout callout--{{ type }}" role="note">
+  <span class="callout__icon" aria-hidden="true">
+    {%- case type -%}
+      {%- when 'warning' -%}!
+      {%- when 'audiophile' -%}♠
+      {%- else -%}i
+    {%- endcase -%}
+  </span>
+  <div class="callout__body">
+    {%- if include.title -%}<p class="callout__title">{{ include.title }}</p>{%- endif -%}
+    <div class="callout__content">{{ include.content }}</div>
+  </div>
+</aside>

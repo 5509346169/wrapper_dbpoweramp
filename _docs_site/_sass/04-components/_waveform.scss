@@ -1,0 +1,17 @@
+.waveform {
+  margin: 0;
+  display: block;
+  width: 100%;
+}
+.waveform svg {
+  width: 100%;
+  height: clamp(140px, 22vw, 260px);
+}
+.waveform__caption {
+  margin-top: var(--s-2);
+  font-size: var(--step--1);
+  color: var(--ink-mute);
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+}

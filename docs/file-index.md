@@ -88,6 +88,8 @@ Cache lifecycle:
 - **Never deleted** automatically — it's a persistent snapshot. Delete manually with `rm ./tmp/scan_cache_*.db` to force a fresh walk.
 - The `--no-scan-cache` flag skips both read and write of the cache.
 
+The scan cache does **not** cache probe results, so post-convert verification runs from scratch on every run that actually transcodes a file. The `--no-scan-cache` flag only affects the directory walk, not the verify step.
+
 ### Creation
 
 The index is created at the beginning of the scan phase:
@@ -205,61 +207,9 @@ This skips the scan and probe phases entirely, using the index directly.
 
 ---
 
-## API Usage
+## Verification interaction
 
-### Creating an Index
-
-```python
-from src.index.builder import IndexBuilder
-from src.index.scanner import scan_with_progress
-from src.models.types import LossyAction
-
-# Create index
-index = IndexBuilder(Path("output.db"))
-
-# Scan files
-rows, _ = scan_with_progress(input_path, excludes, preset, progress)
-
-# Enrich rows (probe, classify)
-enrich_index_rows_streaming(
-    scan_rows=rows,
-    input_root=input_root,
-    source_root=None,
-    output_root=output_root,
-    preset=preset,
-    lossy_action=LossyAction.CONVERT,
-    no_lossy_check=False,
-    probe_workers=8,
-    progress=progress,
-    index_builder=index,
-)
-
-index.commit()
-index.close()
-```
-
-### Reading an Index
-
-```python
-from src.index.builder import IndexBuilder
-
-index = IndexBuilder.from_existing(Path("output.db"))
-
-# Iterate rows
-for row in index.iter_rows():
-    print(f"Source: {row.source_path}")
-    print(f"Dest: {row.dest_path}")
-    print(f"Type: {row.job_type}")
-    print(f"Lossy: {row.is_lossy}")
-
-# Get summary
-summary = index.get_summary()
-print(f"Total: {summary['total']}")
-print(f"Lossy: {summary['lossy']}")
-print(f"By type: {summary['by_type']}")
-
-index.close()
-```
+Post-convert integrity verification (`--verify-output full`) and pre-verify (`--verify-skip`) operate on the output files as they exist on disk; they have no interaction with the scan cache. The `--build-index` and `--index` modes do not run verification when no transcoding occurs, but `--verify-skip` does run inside `--index` mode when the pre-filter classifies a job as a skip candidate.
 
 ---
 

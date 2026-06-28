@@ -1,0 +1,28 @@
+=== Testing imports ===
+OK: src.audio.integrity
+OK: src.audio.verify_backends
+OK: src.history.schema
+OK: src.history.migrations (SCHEMA_VERSION=2)
+OK: src.history.conversion_db
+OK: src.execution.events (VERIFY_RESULT in enum: True)
+OK: src.execution.run_job
+OK: src.ui.progress.protocol
+OK: src.ui.progress.rich_sink
+OK: src.ui.progress.verbose_sink
+OK: src.ui.progress.null_sink
+OK: src.execution.event_drain
+OK: src.cli.args
+OK: src.cli.db_cmd
+OK: src.app.context
+OK: src.app.backend
+OK: src.app.lifecycle.signals
+OK: src.app.lifecycle.tempdir
+OK: src.app.lifecycle.scan_cache
+OK: src.app.pipeline.scan
+ERROR: cannot import name 'IndexRow' from 'src.models.types' (D:\wrapper-dbpoweramp\src\models\types.py)
+Traceback (most recent call last):
+  File "D:\wrapper-dbpoweramp\tests\manual_test.py", line 73, in <module>
+    from src.app.pipeline.enrich import enrich
+  File "D:\wrapper-dbpoweramp\src\app\pipeline\enrich.py", line 11, in <module>
+    from src.models.types import IndexRow, LossyAction, PresetConfig
+ImportError: cannot import name 'IndexRow' from 'src.models.types' (D:\wrapper-dbpoweramp\src\models\types.py)

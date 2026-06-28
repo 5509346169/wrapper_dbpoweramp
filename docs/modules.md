@@ -71,6 +71,74 @@ src/
 
 ---
 
+## `src/app/`
+
+Post-refactor application structure. All modules are internal.
+
+### `context.py`
+
+`AppContext` frozen dataclass bundles `args`, `settings`, `preset`, `backend`, `backend_name`, `db_path`, `workers`, `worker_model`, `execution_mode`, `verbose`. `build_context(args) -> AppContext` factory resolves all fields from the parsed CLI namespace.
+
+### `backend.py`
+
+`_resolve_backend_name()` + `supports()` compatibility gate.
+
+### `lifecycle/signals.py`
+
+`SignalGuard` context manager — installs SIGINT/SIGTERM handlers, yields a guard whose `.interrupted` flag is set by the handlers, restores originals on exit. Replaces module-level `_run_interrupted` and `_run_failed_count`.
+
+### `lifecycle/tempdir.py`
+
+`tmp/` directory lifecycle (create on entry, delete on clean exit, preserve on failure/interrupt).
+
+### `lifecycle/scan_cache.py`
+
+Scan cache open/close wrapper.
+
+### `pipeline/scan.py`
+
+`scan_with_progress` / `load_rows_from_cache` orchestration.
+
+### `pipeline/enrich.py`
+
+Calls `src/jobs/enrich.py` for lossy probe.
+
+### `pipeline/jobs.py`
+
+`_row_to_job` + lossy-gate check.
+
+### `pipeline/prefilter.py`
+
+`should_skip` loop + pre-verify gate (`--verify-skip`).
+
+### `pipeline/phases.py`
+
+`_run_jobs_by_phase` (phased execution mode).
+
+### `pipeline/execute.py`
+
+Verbose/Rich sink + `run_all` loop + futures draining.
+
+### `pipeline/reporting.py`
+
+Final "Done. Success: ..." summary + `_format_bytes`.
+
+### `commands/`
+
+Command modules that each take `ctx: AppContext` as their single required argument:
+
+| Module | Entry point |
+|--------|-------------|
+| `commands/build_index.py` | `cmd_build_index(ctx)` |
+| `commands/run_from_index.py` | `cmd_run_from_index(ctx)` |
+| `commands/run_pipeline.py` | `cmd_run_pipeline(ctx)` |
+| `commands/dry_run.py` | `cmd_dry_run(ctx)` |
+| `commands/list_lossy.py` | `cmd_list_lossy(ctx)` |
+| `commands/db_check.py` | `cmd_db_check(ctx)` |
+| `commands/db_migrate.py` | `cmd_db_migrate(ctx)` |
+
+---
+
 ## `src/exceptions.py`
 
 Custom exception classes for the application.
@@ -386,6 +454,18 @@ def validate_args(args: "Namespace") -> None:
 
 Multi-tier lossy detection with cascade from fast to slow.
 
+---
+
+## `src/audio/integrity.py`
+
+Post-conversion integrity verification. `VerifyStatus` enum: `OK`, `NOT_OK`, `UNSUPPORTED`. `VerifyResult` dataclass: `status`, `reason`, `fmt`, `duration_s`, plus `result.short` property returning `Okay` / `Not - ...` / `Skipped - ...`. `verify_file(path) -> VerifyResult` dispatches to the best backend (soundfile -> miniaudio -> mutagen) at call time.
+
+---
+
+## `src/audio/verify_backends.py`
+
+Integrity check implementations. `_verify_soundfile(path)`: full-frame block decode via libsndfile, FLAC embedded MD5 verified on close, truncation guard (declared frames > 1 percent above decoded frames raises NOT_OK). `_verify_miniaudio(path)`: streaming decode via miniaudio.stream_file(), raises on sync/frame errors. `_verify_mutagen(path)`: easy=False tag/metadata sanity only (last-resort fallback). `_has_optional_dep()` helper hides the HAS_SOUNDFILE/HAS_MINIAUDIO/HAS_MUTAGEN flags.
+
 ### Constants
 
 #### Extension Sets
@@ -692,7 +772,7 @@ Returns a tuple of (summary dict with success/skipped/failed counts, list of fut
 
 ### `run_job.py`
 
-Single-job execution — copy / convert / skip branches.
+Single-job execution — copy / convert / skip branches. `_verify_output_file` now calls `src.audio.integrity.verify_file()` for `convert` jobs (full-frame decode), falls back to existence + non-zero-size for `copy` jobs, and is not called for `skip` jobs. On `NOT_OK` the job is flipped to `FAILED` with `error_msg = "Not - <reason>`. A `VERIFY_RESULT` event is enqueued before `FINISHED`.
 
 ```python
 def run_job(
@@ -738,7 +818,8 @@ Synchronous wrapper for conversion/copy history.
 ```python
 class ConversionDB:
     def __init__(self, db_path: Path) -> None:
-        """Open the SQLite connection and ensure the history table exists."""
+        """Open the SQLite connection and ensure the history table exists.
+        Auto-runs migrate_to_current() on first open."""
 
     def get_record(self, source: str, dest: str) -> Optional[dict]:
         """Return the row matching (source_path, dest_path), or None."""
@@ -753,8 +834,13 @@ class ConversionDB:
         error_msg: Optional[str] = None,
         stdout: Optional[str] = None,
         file_size: Optional[int] = None,
+        verify_status: Optional[str] = None,       # 'OK' | 'NOT_OK' | 'UNSUPPORTED' | None
+        verify_reason: Optional[str] = None,
+        verify_format: Optional[str] = None,
+        verify_duration_s: Optional[float] = None,
     ) -> None:
-        """Insert or update a history row with the current UTC timestamp."""
+        """Insert or update a history row with the current UTC timestamp.
+        The four verify_* kwargs are optional; omitting them writes NULL."""
 
     def should_skip(
         self, source: str, dest: str, job_type: str, dest_file_exists: bool,
@@ -769,6 +855,12 @@ class ConversionDB:
 ### `write_queue.py`
 
 Async writer thread for conversion history.
+
+---
+
+### `migrations.py`
+
+Schema versioning and migration orchestrator. SCHEMA_VERSION = 2 (current). MIGRATIONS list maps (from_ver, to_ver, run_once_sql, row_backfill_sql). migrate_to_current(db_path) runs pending migrations in a single transaction, rolls back and restores .bak-<UTCISO> on failure, and writes to migration_audit after each step. get_db_version(db_path) -> DbVersionInfo is read-only (uses mode=ro SQLite URI). DbVersionInfo dataclass: db_path, current_version, target_version, up_to_date, backup_paths, applied_migrations, needs_backup.
 
 ```python
 class DBWriteQueue:
@@ -937,6 +1029,7 @@ class JobEventKind(str, Enum):
     FINISHED = "finished"
     LOG = "log"
     ACTIVITY = "activity"
+    VERIFY_RESULT = "verify_result"   # payload: (path, status, reason, fmt, dur_s)
 ```
 
 ### Functions

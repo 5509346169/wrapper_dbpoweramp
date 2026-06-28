@@ -81,3 +81,8 @@ class ProgressSink(Protocol):
         bar should keep advancing but show the current tier.
         """
         ...
+
+    def log_verify_result(self, infile: str, status: str, reason: str | None,
+                         fmt: str | None, duration_s: float | None) -> None:
+        """Log a post-write verify result: 'Okay' or 'Not - <reason>'."""
+        ...

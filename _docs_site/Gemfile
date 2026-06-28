@@ -1,0 +1,18 @@
+source "https://rubygems.org"
+
+ruby "3.2.0"
+
+# Frozen to minor pins so CI and local builds agree.
+gem "jekyll", "~> 4.3"
+gem "jekyll-seo-tag", "~> 2.8"
+gem "jekyll-sitemap", "~> 1.4"
+gem "jekyll-feed", "~> 0.17"
+gem "jekyll-redirect-from", "~> 0.16"
+gem "jekyll-include-cache", "~> 0.2"
+gem "jekyll-optional-front-matter", "~> 0.4"
+gem "kramdown-parser-gfm", "~> 1.1"
+
+group :development, :test do
+  gem "html-proofer", "~> 5.0"
+  gem "rubocop", "~> 1.60", require: false
+end

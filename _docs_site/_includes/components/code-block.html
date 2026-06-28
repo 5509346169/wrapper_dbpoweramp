@@ -1,0 +1,17 @@
+{%- comment -%}
+  Code block — wraps highlight output with a copy-to-clipboard button.
+  Vanilla JS in assets/vendor/theme.js handles the click.
+{%- endcomment -%}
+<figure class="code-block{% if include.class %} {{ include.class }}{% endif %}"
+        data-code-block
+        data-lang="{{ include.lang | default: 'sh' }}">
+  {%- if include.title -%}
+    <figcaption class="code-block__title">{{ include.title }}</figcaption>
+  {%- endif -%}
+  <div class="code-block__body">
+    <button type="button" class="code-block__copy" data-code-copy aria-label="Copy code">
+      <span data-code-copy-label>Copy</span>
+    </button>
+    <pre class="code-block__pre"><code class="language-{{ include.lang | default: 'sh' }}">{{ include.content | newline_to_br | replace: '<br />', '' }}</code></pre>
+  </div>
+</figure>

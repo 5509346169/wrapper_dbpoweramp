@@ -55,3 +55,18 @@ class VerboseProgressSink:
         """Print file processing result to stdout."""
         lossy_marker = " [LOSSY]" if is_lossy else ""
         self._console.print(f"  {filename} -> {job_type}{lossy_marker}")
+
+    def log_verify_result(self, infile: str, status: str, reason: str | None,
+                         fmt: str | None, duration_s: float | None) -> None:
+        """Print a verify result line to stdout.
+
+        Format: verify   Okay   3.42s   FLAC/PCM_16   /path/to/out.flac
+        """
+        dur_str = f"{duration_s:.2f}s" if duration_s is not None else "?"
+        fmt_str = fmt or "?"
+        if status == "OK":
+            self._console.print(f"verify   Okay   {dur_str}   {fmt_str}   {infile}")
+        elif status == "UNSUPPORTED":
+            self._console.print(f"verify   Skipped - {reason or 'unsupported format'}   {infile}")
+        else:
+            self._console.print(f"verify   Not - {reason or 'unknown reason'}   {infile}")

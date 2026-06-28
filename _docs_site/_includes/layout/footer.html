@@ -1,0 +1,12 @@
+<footer class="site-footer">
+  <div class="site-footer__inner">
+    <p>
+      <span class="site-footer__brand">{{ site.title }}</span>
+      <span class="site-footer__sep">·</span>
+      <a href="{{ site.repo | prepend: 'https://github.com/' }}">Source on GitHub</a>
+      <span class="site-footer__sep">·</span>
+      <a href="{{ '/feed.xml' | relative_url }}">RSS</a>
+    </p>
+    <p class="site-footer__tagline">{{ site.tagline }}</p>
+  </div>
+</footer>

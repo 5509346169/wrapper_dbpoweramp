@@ -241,21 +241,29 @@ class IndexError(Exception):
 
 ## Output Verification
 
-After every conversion, the output file is verified:
+After every `convert` job, `run_job` calls `_verify_output_file(job)`, which runs a full-frame decode via `src.audio.integrity.verify_file()`. The three backends are tried in priority order: `soundfile` (libsndfile) -> `miniaudio` -> `mutagen`. For `copy` jobs, verification falls back to existence + non-zero size. For `skip` jobs, verification is not called.
 
-```python
-def _verify_output_file(job: ConversionJob) -> tuple[bool, str | None]:
-    if not job.outfile.exists():
-        return False, f"Output file not found: {job.outfile}"
-    
-    size = job.outfile.stat().st_size
-    if size == 0:
-        return False, f"Output file is empty: {job.outfile}"
-    
-    return True, None
-```
+**Output forms:**
 
-**Why?** Some tools may exit 0 even when the output is invalid. Verification ensures we don't mark corrupt outputs as successful.
+| `VerifyResult` status | Rendered line | Job outcome |
+|-----------------------|---------------|-------------|
+| `OK` | `Okay` | SUCCESS |
+| `NOT_OK` | `Not - <reason>` | `FAILED`, `error_msg` set to the `Not - ...` line |
+| `UNSUPPORTED` | `Skipped - <reason>` | SUCCESS (soft warning logged to `error_msg` as `verify skipped: ...`) |
+
+**Why?** Some tools may exit 0 even when the output is corrupt or truncated. Verification ensures corrupt outputs are never marked as successful.
+
+---
+
+## Pre-verify demotion
+
+When `--verify-skip` is set and a skip candidate's on-disk output decodes as `NOT_OK`, the job is moved from `skipped_jobs` to `pending_jobs` and the bad `SUCCESS` row is overwritten by the next run's `log_conversion`. The `VERIFY_RESULT` event with `status=NOT_OK` is enqueued before the conversion phase starts, so the UI shows the demotion immediately.
+
+---
+
+## Schema migration failure
+
+`ConversionDB.__init__` runs `migrate_to_current()` as its first action. On a migration error: the transaction is rolled back, the `.bak-<UTCISO>` file is restored, and a clear error is printed with the backup path and suggested recovery steps. The wrapper exits with code 1.
 
 ---
 

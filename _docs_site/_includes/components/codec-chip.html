@@ -1,0 +1,19 @@
+{%- comment -%}
+  Codec chip — pill with format + backend support. Reads from
+  _data/presets.yml by slug.
+{%- endcomment -%}
+{%- assign slug = include.slug -%}
+{%- assign preset = site.data.presets | where: "slug", slug | first -%}
+{%- if preset -%}
+<span class="codec-chip codec-chip--{{ preset.color | default: 'cyan' }} codec-chip--{{ preset.type }}"
+      data-codec="{{ preset.codec }}"
+      title="{{ preset.summary }}">
+  <span class="codec-chip__icon" data-icon="{{ preset.icon }}" aria-hidden="true"></span>
+  <span class="codec-chip__name">{{ preset.name }}</span>
+  <span class="codec-chip__meta">{{ preset.bitrate }}</span>
+</span>
+{%- else -%}
+<span class="codec-chip codec-chip--unknown" title="Unknown preset: {{ slug }}">
+  {{ slug }}
+</span>
+{%- endif -%}

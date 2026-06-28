@@ -1,0 +1,55 @@
+// Reference layout — two-pane alphabetical view.
+
+.reference {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--s-6);
+  max-width: var(--shell-max);
+  margin: 0 auto;
+  padding: var(--s-7) var(--s-5);
+
+  @media (min-width: 960px) {
+    grid-template-columns: 240px minmax(0, 1fr);
+    align-items: start;
+  }
+}
+
+.reference__index {
+  position: sticky;
+  top: var(--s-7);
+  font-size: var(--step--1);
+
+  @media (max-width: 959px) {
+    position: static;
+    border-bottom: 1px solid var(--rule);
+    padding-bottom: var(--s-4);
+  }
+
+  ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  li {
+    margin: var(--s-1) 0;
+  }
+  .reference__group {
+    font-family: var(--font-display);
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-caps);
+    font-size: var(--step--1);
+    color: var(--ink-mute);
+    margin-top: var(--s-4);
+  }
+  a {
+    color: var(--ink-soft);
+    text-decoration: none;
+    border-left: 2px solid transparent;
+    padding-left: var(--s-2);
+  }
+  a:hover { color: var(--accent); border-left-color: var(--accent); }
+}
+
+.reference__content {
+  min-width: 0;
+}

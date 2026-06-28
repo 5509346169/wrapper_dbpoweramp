@@ -1,0 +1,127 @@
+// Base reset + element defaults. Reads the variables declared in 01-tokens/.
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html {
+  font-family: var(--font-body);
+  font-size: 100%;
+  line-height: var(--lh-body);
+  color: var(--ink);
+  background: var(--paper);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-size: var(--step-0);
+}
+
+img, svg, video {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
+}
+a:hover { text-decoration: underline; }
+
+::selection {
+  background: var(--accent);
+  color: var(--paper);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  letter-spacing: var(--tracking-display);
+  line-height: var(--lh-display);
+  margin: 0 0 var(--s-3);
+  color: var(--ink);
+}
+
+h1 { font-size: var(--step-6); font-weight: 500; }
+h2 { font-size: var(--step-4); font-weight: 500; }
+h3 { font-size: var(--step-2); }
+h4 { font-size: var(--step-1); }
+
+p { margin: 0 0 var(--s-4); }
+
+code, pre, kbd, samp { font-family: var(--font-mono); }
+
+code {
+  font-size: 0.92em;
+  background: var(--rule-soft);
+  padding: 0.1em 0.35em;
+  border-radius: var(--radius-sm);
+}
+
+pre {
+  font-size: var(--step--1);
+  background: var(--paper-deep);
+  color: var(--ink);
+  padding: var(--s-4);
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+  border: 1px solid var(--rule);
+  line-height: 1.55;
+}
+pre code { background: transparent; padding: 0; }
+
+blockquote {
+  margin: var(--s-6) 0 var(--s-6) var(--hero-asym);
+  padding-left: var(--s-4);
+  border-left: 2px solid var(--accent);
+  font-style: italic;
+  color: var(--ink-soft);
+}
+
+hr {
+  border: 0;
+  border-top: 1px solid var(--rule);
+  margin: var(--s-7) 0;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: var(--s-4) 0 var(--s-6);
+  font-size: var(--step-0);
+}
+th, td {
+  text-align: left;
+  padding: var(--s-2) var(--s-3);
+  border-bottom: 1px solid var(--rule);
+  vertical-align: top;
+}
+th {
+  font-family: var(--font-display);
+  font-weight: 500;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  font-size: var(--step--1);
+  color: var(--ink-soft);
+}

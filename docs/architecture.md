@@ -38,18 +38,13 @@ flowchart LR
 
 ### `main.py`
 
-The single entry point. Orchestrates the full pipeline in the `_main()` function:
+`main.py` is a ≤ 60-line dispatcher that builds an `AppContext` (see `src/app/context.py`) and hands off to `src/app/commands/{build_index,run_from_index,run_pipeline,dry_run,list_lossy,db_check,db_migrate}.py`. The dispatcher routes based on the parsed `argparse` Namespace:
 
-1. Parse CLI arguments (`parse_args`, `validate_args`)
-2. Load `settings.yaml` and `presets.yaml`
-3. Resolve and validate the backend
-4. Create `tmp/` and the temporary index DB (`tmp/index.db`)
-5. Scan phase (with scan-cache hit/miss path)
-6. Enrichment phase (lossy probe, output path, job type)
-7. Optional lossy gate (abort if lossy files found and `--lossy-action` absent)
-8. Resume pre-filter (check `conversion_history.db`)
-9. Execute jobs via `run_all`
-10. Cleanup: delete `tmp/index.db` on clean exit, preserve on failure/interrupt
+- `--db-version` flag set → `db_check.run(args)` (prints and exits)
+- `args.command == "db"` → `db_check.run(args)` / `db_migrate.run(args)` (subcommand dispatch)
+- `--build-index` set → `build_index.run(ctx)`
+- `--index` set → `run_from_index.run(ctx)`
+- Otherwise → `run_pipeline.run(ctx)`
 
 ### `src/config/`
 
@@ -59,11 +54,38 @@ The single entry point. Orchestrates the full pipeline in the `_main()` function
 | `settings_loader.py` | Parses `settings.yaml` into `Settings` objects; validates required keys |
 | `preset_loader.py` | Parses `presets.yaml` into `PresetConfig` objects |
 
+### `src/app/`
+
+Post-refactor application structure. All modules are internal.
+
+| File | Responsibility |
+|------|----------------|
+| `context.py` | `AppContext` frozen dataclass + `build_context(args)` factory |
+| `backend.py` | `_resolve_backend_name()` + `supports()` compatibility gate |
+| `lifecycle/signals.py` | `SignalGuard` context manager for SIGINT/SIGTERM |
+| `lifecycle/tempdir.py` | `tmp/` directory lifecycle |
+| `lifecycle/scan_cache.py` | Scan cache open/close wrapper |
+| `pipeline/scan.py` | `scan_with_progress` / `load_rows_from_cache` orchestration |
+| `pipeline/enrich.py` | Calls `src/jobs/enrich.py` for lossy probe |
+| `pipeline/jobs.py` | `_row_to_job` + lossy-gate check |
+| `pipeline/prefilter.py` | `should_skip` loop + pre-verify gate (`--verify-skip`) |
+| `pipeline/phases.py` | `_run_jobs_by_phase` (phased execution mode) |
+| `pipeline/execute.py` | Verbose/Rich sink + `run_all` loop + futures draining |
+| `pipeline/reporting.py` | Final "Done. Success: ..." summary + `_format_bytes` |
+| `commands/build_index.py` | `cmd_build_index(ctx)` |
+| `commands/run_from_index.py` | `cmd_run_from_index(ctx)` |
+| `commands/run_pipeline.py` | Main scan + enrich + execute flow |
+| `commands/dry_run.py` | `--dry-run` handling |
+| `commands/list_lossy.py` | `--list-lossy` handling |
+| `commands/db_check.py` | `db check` / `--db-version` entry point |
+| `commands/db_migrate.py` | `db migrate` entry point |
+
 ### `src/cli/`
 
 | File | Responsibility |
 |------|----------------|
-| `args.py` | `parse_args()` — `argparse` parser for all CLI flags. `validate_args()` — cross-flag consistency checks (e.g. `--index` + `--build-index` are mutually exclusive). |
+| `args.py` | `parse_args()` — `argparse` parser for all CLI flags. `validate_args()` — cross-flag consistency checks. Also owns the `db` subcommand group. |
+| `db_cmd.py` | `cmd_db_check()`, `cmd_db_migrate()`, `cmd_db_doctor()` — dispatchers for the `db` subcommand group. |
 
 ### `src/audio/`
 
@@ -74,6 +96,8 @@ Lossy source detection cascade. Each file is evaluated through three tiers in se
 | `extensions.py` | 1 — Extension | Unambiguous extensions (`.mp3`, `.aac`, `.ogg`, `.opus` → lossy; `.flac`, `.wav`, `.wv`, `.ape`, `.tta` → lossless). Returns immediately if the extension is in the known list. |
 | `folder_heuristic.py` | 2 — Folder name | Looks for lossy tokens (`mp3`, `aac`, `m4a`, `ogg`, `opus`) in any parent directory name. Handles cases like `~/Music/MP3/track.flac` where the file extension is ambiguous. |
 | `mutagen_probe.py` | 3 — Metadata | Reads the audio stream codec tag via `mutagen`. Called only for ambiguous extensions (`.m4a`, `.mp4`, `.wav`) that tier 1 and 2 could not resolve. |
+| `integrity.py` | Post-convert verifier | `VerifyStatus` enum, `VerifyResult` dataclass, `verify_file()` dispatcher. Produces `Okay` / `Not - ...` / `Skipped - ...` via `result.short`. |
+| `verify_backends.py` | Integrity check implementations | `_verify_soundfile` (libsndfile full-frame decode + FLAC MD5 + truncation guard), `_verify_miniaudio` (streaming decode), `_verify_mutagen` (tag sanity only, last-resort fallback). |
 
 The cascade is implemented in `cascade.py`. Tiers are tried **per file** — not in three sequential phases — so all worker threads stay busy throughout the probe phase regardless of the workload mix.
 
@@ -153,8 +177,9 @@ classDiagram
 | File | Responsibility |
 |------|----------------|
 | `schema.py` | Shared `CREATE TABLE` and PRAGMA statements for both the history DB and the scan cache DB. Both use WAL mode and a 5-second busy timeout. |
-| `conversion_db.py` | `ConversionDB` — synchronous read/write wrapper around `conversion_history.db`. `should_skip()` checks source+dest+job_type and file size to decide whether to skip a job on resume. |
+| `conversion_db.py` | `ConversionDB` — synchronous read/write wrapper around `conversion_history.db`. `should_skip()` checks source+dest+job_type and file size to decide whether to skip a job on resume. `__init__` auto-runs `migrate_to_current()` on first open. `log_conversion` accepts optional `verify_status`, `verify_reason`, `verify_format`, `verify_duration_s` kwargs. |
 | `write_queue.py` | `DBWriteQueue` — async writer. Workers push log entries to a `queue.Queue`; a dedicated background thread drains them and writes to the DB. Eliminates concurrent write contention. Callers must call `flush()` before exit. |
+| `migrations.py` | Schema versioning and migration orchestration. Owns `SCHEMA_VERSION` (current = 2), `MIGRATIONS` list, `migrate_to_current()`, `get_db_version()`, and `DbVersionInfo` dataclass. Creates `<db>.bak-<UTCISO>` before the first schema change and writes a `migration_audit` row after each step. |
 
 ### `src/sidecars/`
 
@@ -211,9 +236,17 @@ List[ConversionJob]
     │
     │  run_all() → Thread/ProcessPoolExecutor
     │
-    ├─► backend.convert()  →  output file  →  backend.verify()  →  DBWriteQueue (async write)
+    ├─► backend.convert()  →  output file
+    │                             │
+    │        ┌─ Pre-verify gate (--verify-skip) ──► demote corrupt skip → pending_jobs
+    │        │
+    │        └─ Post-convert verify (--verify-output full) ──► NOT_OK → job marked FAILED
+    │                                          └─ OK / UNSUPPORTED ──► history log
+    │
     ├─► backend.copy()
     └─► (skip — no-op)
+
+DB version inspection (db check / --db-version) — side-branch from entry point, no file operations
 ```
 
 ---

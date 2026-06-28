@@ -1,0 +1,30 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f6f4ee" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f1216" media="(prefers-color-scheme: dark)">
+
+<title>{% if page.title %}{{ page.title }} — {{ site.title }}{% else %}{{ site.title }}{% endif %}</title>
+<meta name="description" content="{{ page.summary | default: page.excerpt | default: site.description | strip_html | normalize_whitespace | truncate: 160 }}">
+
+<link rel="canonical" href="{{ page.url | absolute_url }}">
+<link rel="alternate" type="application/atom+xml" title="{{ site.title }}" href="{{ '/feed.xml' | absolute_url }}">
+<link rel="sitemap" href="{{ '/sitemap.xml' | absolute_url }}">
+
+<link rel="preload" as="font" type="font/woff2" href="{{ '/assets/fonts/bodoni-moda-var.woff2' | relative_url }}" crossorigin>
+<link rel="preload" as="font" type="font/woff2" href="{{ '/assets/fonts/geist-var.woff2' | relative_url }}" crossorigin>
+<link rel="preload" as="font" type="font/woff2" href="{{ '/assets/fonts/jetbrains-mono-var.woff2' | relative_url }}" crossorigin>
+
+<link rel="stylesheet" href="{{ '/assets/css/main.css' | relative_url }}">
+
+<script type="module" src="{{ '/assets/vendor/theme.js' | relative_url }}" defer></script>
+<script type="module" src="{{ '/assets/vendor/waveform.js' | relative_url }}" defer></script>
+<script type="module" src="{{ '/assets/vendor/search-palette.js' | relative_url }}" defer></script>
+
+{%- comment -%}
+  Local vendoring: zero external network requests at page load.
+  CSP-equivalent guard: scripts/check-no-cdn.mjs fails the build if any
+  https:// script/link survives into the deployable artifact.
+{%- endcomment -%}
+
+{%- seo -%}

@@ -332,17 +332,29 @@ if not force and db.should_skip(
 - Destination file still exists
 - (Optional) Stored file size matches current file size
 
+When `--verify-skip` is set, the on-disk output is re-decoded via `src.audio.integrity.verify_file()` before honouring the history row. See §7a.
+
 ### 5.5 Output Verification
 
-```python
-is_valid, error_msg = _verify_output_file(job)
-if not is_valid:
-    status = "FAILED"
-```
+For `convert` jobs: `run_job` calls `_verify_output_file(job)`, which runs a full-frame decode via `src.audio.integrity.verify_file()` (soundfile → miniaudio → mutagen). For `copy` jobs: existence + non-zero size only. For `skip` jobs: `_verify_output_file` is not called inside `run_job` (no output file).
 
-**Verification:**
-- Output file must exist
-- Output file must have non-zero size
+A `VERIFY_RESULT` event is enqueued before the `FINISHED` event, giving the progress sink real-time feedback for both `--execution-mode hybrid` and `--execution-mode phased`.
+
+**Outcomes:**
+- `NOT_OK` — job is flipped to `FAILED`; history row receives `verify_status="NOT_OK"` and `verify_reason="Not - <reason>"`.
+- `UNSUPPORTED` — job passes; `error_msg` receives `verify skipped: <reason>` (soft warning, not a failure).
+- `OK` — job passes with no extra annotation.
+
+### 5.6 Sidecar Copying
+
+For `convert` jobs: `run_job` calls `_verify_output_file(job)`, which runs a full-frame decode via `src.audio.integrity.verify_file()` (soundfile → miniaudio → mutagen). For `copy` jobs: existence + non-zero size only. For `skip` jobs: `_verify_output_file` is not called inside `run_job` (no output file).
+
+A `VERIFY_RESULT` event is enqueued before the `FINISHED` event, giving the progress sink real-time feedback for both `--execution-mode hybrid` and `--execution-mode phased`.
+
+**Outcomes:**
+- `NOT_OK` — job is flipped to `FAILED`; history row receives `verify_status="NOT_OK"` and `verify_reason="Not - <reason>"`.
+- `UNSUPPORTED` — job passes; `error_msg` receives `verify skipped: <reason>` (soft warning, not a failure).
+- `OK` — job passes with no extra annotation.
 
 ### 5.6 Sidecar Copying
 
@@ -353,6 +365,34 @@ copy_covers(infile, outfile, preset.covers)
 
 **Lyrics:** Copied with same extension (`.lrc`, `.txt`)
 **Covers:** Copied with hidden name (`.cover.jpg`) if policy says to hide
+
+---
+
+## §7a: Pre-verify skip gate
+
+When `--verify-skip` is set, the pipeline re-decodes each skip-candidate's on-disk output **before** honouring the history row:
+
+```python
+pre = verify_file(job.outfile)
+if pre.status is VerifyStatus.NOT_OK:
+    # Demote: do NOT skip, force a reconvert.
+    pending_jobs.append(job)
+    skipped_jobs.remove(job)
+    continue
+elif pre.status is VerifyStatus.OK:
+    # Trust the existing history row — fall through to normal skip.
+    pass
+# UNSUPPORTED: also trust the existing row.
+```
+
+**Demotion policy:**
+- `OK` → respect the existing `should_skip` decision (fast path, no reconvert).
+- `NOT_OK` → demote from skip to pending. The bad `SUCCESS` row is overwritten by the new run's `log_conversion`.
+- `UNSUPPORTED` → trust the existing row (can't decode it, so don't penalise).
+
+The demotion is visible in the UI via a `VERIFY_RESULT` event with `status=NOT_OK` before the conversion phase starts.
+
+This pre-filter runs **before** the `phased` / `hybrid` split, so the demotion logic is identical in both `--execution-mode hybrid` and `--execution-mode phased`.
 
 ---
 
