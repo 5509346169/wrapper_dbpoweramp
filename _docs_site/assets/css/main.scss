@@ -1,0 +1,23 @@
+// Entry point — every import goes here. Order matters: tokens first, then base, layout, components.
+
+@use "01-tokens/color";
+@use "01-tokens/type";
+@use "01-tokens/space";
+@use "01-tokens/motion";
+
+@use "02-base/reset";
+@use "02-base/prose";
+
+// Layouts load their own partials via @use from the relevant layout file,
+// but the global shell styles live here.
+@use "03-layout/shell";
+@use "03-layout/landing";
+@use "03-layout/reference";
+@use "03-layout/header";
+
+@use "04-components/waveform";
+@use "04-components/codec-chip";
+@use "04-components/code-block";
+@use "04-components/callout";
+@use "04-components/version-selector";
+@use "04-components/command-palette";

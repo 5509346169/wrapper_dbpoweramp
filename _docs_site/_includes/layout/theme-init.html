@@ -1,0 +1,12 @@
+<script>
+  // No-flash theme init — runs before paint. Reads the saved choice from
+  // localStorage and sets data-theme on <html>. Falls back to OS preference.
+  (function () {
+    try {
+      var stored = localStorage.getItem("theme");
+      var prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+      var theme = stored || (prefersDark ? "dark" : "light");
+      document.documentElement.setAttribute("data-theme", theme);
+    } catch (_) { /* localStorage may be unavailable in private mode */ }
+  })();
+</script>

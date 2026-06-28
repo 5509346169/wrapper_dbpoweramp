@@ -1,0 +1,36 @@
+// Default shell: top header + sticky left rail + centered prose + sticky right rail.
+
+.shell {
+  display: grid;
+  grid-template-columns: var(--rail-w-left) minmax(0, 1fr);
+  grid-template-areas:
+    "header header"
+    "left   main";
+  max-width: var(--shell-max);
+  margin: 0 auto;
+  min-height: 100vh;
+
+  @media (min-width: 1200px) {
+    grid-template-columns: var(--rail-w-left) minmax(0, 1fr) var(--rail-w-right);
+    grid-template-areas:
+      "header header header"
+      "left   main   right";
+  }
+}
+
+.shell__header { grid-area: header; }
+.shell__left   { grid-area: left; }
+.shell__right  { grid-area: right; }
+.shell__main   { grid-area: main; min-width: 0; }
+
+.shell__right {
+  display: none;
+  @media (min-width: 1200px) {
+    display: block;
+    position: sticky;
+    top: var(--s-7);
+    align-self: start;
+    padding: var(--s-7) var(--s-4) 0 var(--s-4);
+    font-size: var(--step--1);
+  }
+}

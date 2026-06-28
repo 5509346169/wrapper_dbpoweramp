@@ -296,6 +296,8 @@ history:
 python main.py -I ~/Music -O ~/Converted -p flac-lossless --db /path/to/history.db
 ```
 
+The history database schema is automatically migrated on first open (see `src/history/migrations.py`). Before the first schema-changing migration, the file is backed up to `<db>.bak-<UTCISO>`. The migration is verbose-logged to the console: `Migrated history.db from v1 -> v2 (4 rows preserved, backup at history.db.bak-2026-06-28T14:30:00Z)` or `Schema up-to-date (v2)` if nothing changed. The `db check`, `db migrate`, `db doctor` subcommands and the `--db-version` flag all operate on the file at `history.db_path`.
+
 ---
 
 ### `execution`

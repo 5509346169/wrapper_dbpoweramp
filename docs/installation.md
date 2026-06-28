@@ -9,7 +9,7 @@ This guide covers installing dependencies for dBpoweramp Wrapper on Linux and Wi
 ### Python
 
 - **Python 3.10** or higher
-- Required packages: `pyyaml`, `rich`
+- Required packages: `pyyaml`, `rich`, `soundfile`, `miniaudio`, `numpy`, `mutagen`
 
 ### FFmpeg (for `native_ffmpeg` backend)
 
@@ -295,6 +295,21 @@ ModuleNotFoundError: No module named 'yaml'
 **Solution:**
 ```sh
 pip install pyyaml rich
+```
+
+**Error:**
+```
+ModuleNotFoundError: No module named 'soundfile'
+```
+
+**Solution:**
+```sh
+pip install soundfile miniaudio numpy
+```
+
+**Verification:**
+```sh
+python -c "import soundfile, miniaudio, numpy; print('OK')"
 ```
 
 ---

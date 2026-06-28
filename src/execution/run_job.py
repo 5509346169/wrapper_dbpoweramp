@@ -7,6 +7,7 @@ from pathlib import Path
 from queue import Queue
 from typing import Callable, Optional
 
+from src.audio.integrity import VerifyStatus, verify_file
 from src.backends.base import ConversionBackend
 from src.history.db import ConversionDB, DBWriteQueue
 from src.models.types import ConversionJob, JobStatus
@@ -15,21 +16,40 @@ from src.sidecars.manager import copy_covers, copy_lyrics
 from src.execution.events import JobEventKind
 
 
-def _verify_output_file(job: ConversionJob) -> tuple[bool, str | None]:
+def _verify_output_file(job: ConversionJob) -> tuple[bool, str | None, str | None, str | None, float | None]:
     """
-    Verify the output file exists and has a reasonable size.
+    Post-write integrity check — runs on-the-fly inside run_job, before
+    the FINISHED event is enqueued and before history is logged.
+
+    For job_type == "convert": full-frame decode via src.audio.integrity.verify_file.
+    For job_type == "copy":    existence + non-empty size only (a copy of an
+                               already-trusted file is assumed good — re-running
+                               the source verifier on it is wasted work).
+    For job_type == "skip":    not called (no output file).
 
     Returns:
-        (is_valid, error_message) - is_valid is True if file exists and has content.
+        (is_valid, error_msg, verify_status, verify_reason, verify_duration_s)
+        On OK: (True, None, "OK", None, duration_s)
+        On UNSUPPORTED: (True, f"verify skipped: {reason}", "UNSUPPORTED", reason, duration_s)
+        On NOT_OK: (False, "Not - <reason>", "NOT_OK", reason, duration_s)
+        On NOT_FOUND/EMPTY: (False, error_msg, "NOT_OK", error_msg, None)
     """
     if not job.outfile.exists():
-        return False, f"Output file not found: {job.outfile}"
+        return False, f"Output file not found: {job.outfile}", "NOT_OK", f"Output file not found: {job.outfile}", None
 
     size = job.outfile.stat().st_size
     if size == 0:
-        return False, f"Output file is empty: {job.outfile}"
+        return False, f"Output file is empty: {job.outfile}", "NOT_OK", f"Output file is empty: {job.outfile}", None
 
-    return True, None
+    if job.job_type != "convert":
+        return True, None, "OK", None, None
+
+    result = verify_file(job.outfile)
+    if result.status is VerifyStatus.OK:
+        return True, None, "OK", None, result.duration_s
+    if result.status is VerifyStatus.UNSUPPORTED:
+        return True, f"verify skipped: {result.reason}", "UNSUPPORTED", result.reason, result.duration_s
+    return False, result.short, "NOT_OK", result.reason, result.duration_s
 
 
 def run_job(
@@ -79,9 +99,13 @@ def run_job(
                 print(f"[runner] copy failed for {job.infile} -> {job.outfile}: {e}")
                 status = "FAILED"
                 error_msg = str(e)
+                if events is not None:
+                    events.put((JobEventKind.VERIFY_RESULT, (infile_name, "UNSUPPORTED", None, None, None)))
             else:
                 # Verify output file before marking as success
-                is_valid, verify_error = _verify_output_file(job)
+                is_valid, verify_error, verify_status, verify_reason, verify_duration_s = _verify_output_file(job)
+                if events is not None:
+                    events.put((JobEventKind.VERIFY_RESULT, (infile_name, verify_status, verify_reason, None, verify_duration_s)))
                 if not is_valid:
                     status = "FAILED"
                     error_msg = verify_error
@@ -96,9 +120,13 @@ def run_job(
                         command=None,
                         status="SUCCESS",
                         file_size=file_size,
+                        verify_status=verify_status,
+                        verify_reason=verify_reason,
+                        verify_format=None,
+                        verify_duration_s=verify_duration_s,
                     )
                     status = "SUCCESS"
-                    error_msg = None
+                    error_msg = verify_error
 
         elif job.job_type == "convert":
             dest_exists = job.outfile.exists()
@@ -117,7 +145,15 @@ def run_job(
 
             if result.status == "SUCCESS":
                 # Verify output file before marking as success
-                is_valid, verify_error = _verify_output_file(job)
+                is_valid, verify_error, verify_status, verify_reason, verify_duration_s = _verify_output_file(job)
+
+                # Enqueue VERIFY_RESULT event immediately (before FINISHED event)
+                if events is not None:
+                    events.put((
+                        JobEventKind.VERIFY_RESULT,
+                        (infile_name, verify_status, verify_reason, None, verify_duration_s),
+                    ))
+
                 if not is_valid:
                     result.status = "FAILED"
                     result.error_msg = verify_error
@@ -134,10 +170,22 @@ def run_job(
                         error_msg=result.error_msg,
                         stdout=result.stdout,
                         file_size=output_size,
+                        verify_status=verify_status,
+                        verify_reason=verify_reason,
+                        verify_format=None,
+                        verify_duration_s=verify_duration_s,
                     )
-
-            status = result.status
-            error_msg = result.error_msg
+                status = result.status
+                error_msg = result.error_msg
+            else:
+                # Non-success status (e.g. backend returned FAILED before verification)
+                if events is not None:
+                    events.put((
+                        JobEventKind.VERIFY_RESULT,
+                        (infile_name, "UNSUPPORTED", None, None, None),
+                    ))
+                status = result.status
+                error_msg = result.error_msg
 
         else:
             status = "FAILED"

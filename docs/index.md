@@ -23,6 +23,9 @@ A comprehensive CLI tool that wraps **dBpoweramp CoreConverter.exe** (via Wine) 
 - [Backends](backends.md) - How each backend (native_ffmpeg, native_dbpoweramp, wine_dbpoweramp) works
 - [Module Reference](modules.md) - Each module's purpose, functions, and classes
 - [Public API](api.md) - Public API reference for programmatic access
+- [Output verification](cli.md) - Integrity verification flags (`--verify-output`, `--verify-skip`) and the `db` subcommand group
+- [DB Schema & Migration](workflow.md) - Schema migration, `migration_audit`, and `.bak` backup behaviour
+- [DB Inspection CLI](cli.md) - `db {check,migrate,doctor}` and `--db-version`
 
 ### Additional Topics
 - [Lossy Source Handling](lossy-handling.md) - How the tool detects and handles lossy audio sources

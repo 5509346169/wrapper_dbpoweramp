@@ -222,6 +222,23 @@ from src.history.db import ConversionDB
 db = ConversionDB(Path("conversion_history.db"))
 ```
 
+### DB Version Inspection
+
+```python
+from src.history.migrations import get_db_version
+from pathlib import Path
+
+info = get_db_version(Path("conversion_history.db"))
+print(info)
+# History DB:    conversion_history.db
+# Schema:        v2 (up-to-date)
+# Target:        v2
+# Last migrated: 2026-06-28 14:30:00 UTC
+# ...
+```
+
+`get_db_version` is read-only — it opens the DB with `mode=ro` and never migrates or writes. Use `migrate_to_current()` (in the same module) to apply pending migrations.
+
 ### Logging Conversions
 
 ```python
@@ -233,6 +250,11 @@ db.log_conversion(
     status="SUCCESS",
     error_msg=None,
     stdout=None,
+    # Optional verify columns (writes NULL if omitted):
+    verify_status="OK",
+    verify_reason=None,
+    verify_format="FLAC/PCM_16",
+    verify_duration_s=3.42,
 )
 ```
 
@@ -319,6 +341,24 @@ result = _is_lossy_by_mutagen(Path("track.m4a"))  # True or False
 ```
 
 ---
+
+## Integrity Verification API
+
+### verify_file
+
+```python
+from src.audio.integrity import verify_file, VerifyStatus, VerifyResult
+
+result = verify_file(Path("output.flac"))
+# result is a VerifyResult:
+#   result.status  -> VerifyStatus.OK | NOT_OK | UNSUPPORTED
+#   result.reason -> str or None
+#   result.fmt    -> str or None  (e.g. "FLAC/PCM_16")
+#   result.duration_s -> float or None
+#   result.short  -> "Okay" | "Not - <reason>" | "Skipped - <reason>"
+```
+
+The three backends are tried in priority order: `soundfile` (libsndfile full-frame decode, FLAC MD5 verification, truncation guard) -> `miniaudio` (streaming decode) -> `mutagen` (tag sanity only). If no backend claims the file extension or none is installed, returns `UNSUPPORTED`.
 
 ## Path Resolution API
 
@@ -667,6 +707,24 @@ if __name__ == "__main__":
 ```
 
 ---
+
+## App Context API
+
+### build_context
+
+```python
+from src.app.context import build_context
+from src.cli.args import parse_args
+
+args = parse_args()
+ctx = build_context(args)
+
+# ctx is an AppContext frozen dataclass with:
+#   ctx.args, ctx.settings, ctx.preset, ctx.backend, ctx.backend_name,
+#   ctx.db_path, ctx.workers, ctx.worker_model, ctx.execution_mode, ctx.verbose
+```
+
+`build_context` resolves the backend name, loads settings and presets, validates preset/backend compatibility, and populates all fields. Raises `SystemExit` on validation failure.
 
 ## Constants Reference
 

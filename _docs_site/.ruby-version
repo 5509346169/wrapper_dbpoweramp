@@ -1,0 +1,4 @@
+# Local machine default. CI overrides this via ruby/setup-ruby.
+# Removing the pin lets contributors with Ruby 3.3/3.4/4.x build without
+# manually editing this file; the Gemfile (ruby ">= 3.2.0") is the
+# authoritative constraint.

@@ -1,0 +1,32 @@
+// Type tokens — Bodoni Moda display, Geist body, JetBrains Mono code.
+// The displayed faces are self-hosted; see assets/fonts/OFL.txt for licenses.
+
+$font-display: "Bodoni Moda", "Bodoni 72", Didot, "Times New Roman", serif;
+$font-body:    "Geist", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+$font-mono:    "JetBrains Mono", "SFMono-Regular", "Menlo", "Consolas", monospace;
+
+:root {
+  --font-display: #{$font-display};
+  --font-body:    #{$font-body};
+  --font-mono:    #{$font-mono};
+
+  // Modular scale at 1.25 (major third). Display sizes clamp fluidly.
+  --step--1: clamp(0.78rem, 0.76rem + 0.10vw, 0.83rem); // 12.5–13.3
+  --step-0:  clamp(0.94rem, 0.91rem + 0.15vw, 1.00rem); // 15–16
+  --step-1:  clamp(1.13rem, 1.08rem + 0.24vw, 1.25rem); // 18–20
+  --step-2:  clamp(1.35rem, 1.27rem + 0.40vw, 1.56rem); // 21.6–25
+  --step-3:  clamp(1.62rem, 1.49rem + 0.65vw, 1.95rem); // 25.9–31.2
+  --step-4:  clamp(1.95rem, 1.74rem + 1.05vw, 2.44rem); // 31.2–39
+  --step-5:  clamp(2.34rem, 2.00rem + 1.70vw, 3.05rem); // 37.5–48.8
+  --step-6:  clamp(2.81rem, 2.30rem + 2.55vw, 3.81rem); // 45–61
+  --step-7:  clamp(3.38rem, 2.64rem + 3.70vw, 4.77rem); // 54–76
+  --step-8:  clamp(4.05rem, 3.00rem + 5.25vw, 5.96rem); // 65–95
+
+  --lh-display: 1.05;
+  --lh-prose:   1.45;
+  --lh-body:    1.6;
+
+  --tracking-display: -0.01em;
+  --tracking-eyebrow: 0.18em;
+  --tracking-caps:    0.04em;
+}

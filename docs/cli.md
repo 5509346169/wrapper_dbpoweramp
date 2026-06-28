@@ -372,6 +372,120 @@ python main.py --index my_index.db -O ~/Converted -p flac-lossless
 
 ---
 
+### `--verify-output MODE`
+
+**Type:** String (enum)  
+**Required:** No  
+**Choices:** `none`, `full`  
+**Default:** `full`
+
+Post-conversion integrity check mode. `full` (default) runs a full-frame decode on every `convert` output via `soundfile` / `miniaudio` / `mutagen`. `none` keeps the legacy existence + non-zero-size check only.
+
+```sh
+# Default: full integrity check (every file is decoded)
+python main.py -I ~/Music -O ~/Converted -p flac-lossless
+
+# Skip the integrity check (legacy mode)
+python main.py -I ~/Music -O ~/Converted -p flac-lossless --verify-output none
+```
+
+When a full-frame decode detects corruption, the output line reads:
+
+```
+[verify] Not - Truncated output: declared 10240 frames, decoded 5120 frames
+```
+
+The job is marked `FAILED` with that reason in the history database.
+
+---
+
+### `--verify-skip`
+
+**Type:** Flag  
+**Required:** No
+
+Pre-verify skip candidates: before honouring a `SUCCESS` history row for a `convert` or `copy` job, re-decode the on-disk output via `src.audio.integrity.verify_file`. If the output decodes as `NOT_OK`, the job is demoted from `SKIP` to `CONVERT` (the pipeline re-runs it) and the original `SUCCESS` row is overwritten with the new result.
+
+Off by default — pre-verify adds a full-frame decode to every skip candidate, which can dominate runtime on large libraries.
+
+```sh
+python main.py -I ~/Music -O ~/Converted -p flac-lossless --verify-skip
+```
+
+---
+
+### `--db-version`
+
+**Type:** Flag  
+**Required:** No
+
+Print the history database schema version and exit before the pipeline starts. Useful for checking whether a migration is needed.
+
+```sh
+python main.py --db-version
+```
+
+**Sample output:**
+```
+History DB:    conversion_history.db
+Schema:        v2 (up-to-date)
+Target:        v2
+Last migrated: 2026-06-28 14:30:00 UTC
+Backups:       1 file on disk (conversion_history.db.bak-2026-06-28T14:30:00Z)
+```
+
+---
+
+## DB Inspection Subcommands
+
+### `python main.py db check`
+
+Print schema version, audit history, and backup status, then exit 0.
+
+```sh
+python main.py db check
+python main.py db check --db-path /path/to/history.db
+python main.py db check --db /path/to/history.db     # alias for --db-path
+python main.py --db /path/to/history.db db check      # top-level --db (must precede the subcommand keyword)
+```
+
+The `--db` flag is an alias for `--db-path` on this subcommand. When passed at the top level (e.g. `--db <path> db check`), argparse forwards it to the `db` dispatcher, which falls through to `args.db` if `args.db_path` is unset.
+
+**Sample output:**
+```
+History DB:    /path/to/history.db
+Schema:        v2 (up-to-date)
+Target:        v2
+Last migrated: 2026-06-28 14:30:00 UTC  (audit row #2)
+Backups:       1 file on disk (history.db.bak-2026-06-28T14:30:00Z, 18.4 MiB)
+```
+
+### `python main.py db migrate`
+
+Force-migrate the history database to the latest schema. The migration auto-runs on first conversion anyway; this subcommand is for recovering from a failed or skipped migration.
+
+```sh
+python main.py db migrate
+python main.py db migrate --db-path /path/to/history.db
+python main.py db migrate --db /path/to/history.db
+python main.py --db /path/to/history.db db migrate
+```
+
+A backup of the form `<db>.bak-<UTCISO>` is created before any migration runs.
+
+### `python main.py db doctor`
+
+Like `db check`, but also probes for orphaned `.bak` files and schema drift.
+
+```sh
+python main.py db doctor
+python main.py db doctor --db-path /path/to/history.db
+python main.py db doctor --db /path/to/history.db
+python main.py --db /path/to/history.db db doctor
+```
+
+---
+
 ## Quick Reference
 
 | Flag | Required | Description |
@@ -396,6 +510,11 @@ python main.py --index my_index.db -O ~/Converted -p flac-lossless
 | `--list-lossy` | No | Print lossy files and exit |
 | `--build-index` | No | Build index to file |
 | `--index` | No | Use pre-built index |
+| `--verify-output` | No | Post-convert integrity check mode (`none`\|`full`) |
+| `--verify-skip` | No | Pre-verify skip candidates before honouring history |
+| `--db-version` | No | Print DB schema version and exit |
+| `db {check,migrate,doctor}` | No | Inspect or migrate the history database |
+| `-v`, `--verbose` | No | Verbose output |
 
 *Required if lossy source files are detected.
 
@@ -449,4 +568,36 @@ python main.py -I ~/Music -O ~/Converted -p flac-lossless
 
 # Step 2: Resume from preserved index
 python main.py --index tmp/index.db -O ~/Converted -p flac-lossless
+```
+
+### Verify integrity post-conversion
+
+```sh
+# Full integrity check (default — every converted file is decoded)
+python main.py -I ~/Music -O ~/Converted -p flac-lossless
+# Output lines may include:
+#   [verify] Okay
+#   [verify] Not - Truncated output: declared 10240 frames, decoded 5120 frames
+
+# Skip integrity check (legacy mode)
+python main.py -I ~/Music -O ~/Converted -p flac-lossless --verify-output none
+```
+
+### Re-decode skip candidates before trusting them
+
+```sh
+# Pre-verify: demotes corrupt skip candidates to pending (will be reconverted)
+python main.py -I ~/Music -O ~/Converted -p flac-lossless --verify-skip
+```
+
+### Check history DB schema before running
+
+```sh
+python main.py --db-version
+```
+
+### Force a schema migration
+
+```sh
+python main.py db migrate --db-path conversion_history.db
 ```

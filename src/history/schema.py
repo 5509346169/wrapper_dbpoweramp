@@ -20,8 +20,20 @@ CREATE_HISTORY_TABLE_SQL = (
     "    stdout TEXT,"
     "    timestamp TEXT,"
     "    file_size INTEGER,"
+    "    verify_status TEXT,"
+    "    verify_reason TEXT,"
+    "    verify_format TEXT,"
+    "    verify_duration_s REAL,"
     "    UNIQUE(source_path, dest_path)"
     ")"
+)
+
+# Idempotent migration for existing databases that predate the verify columns.
+ADD_VERIFY_COLUMNS_SQL = (
+    "ALTER TABLE history ADD COLUMN verify_status TEXT;"
+    "ALTER TABLE history ADD COLUMN verify_reason TEXT;"
+    "ALTER TABLE history ADD COLUMN verify_format TEXT;"
+    "ALTER TABLE history ADD COLUMN verify_duration_s REAL;"
 )
 
 # Idempotent migration for existing databases that predate the file_size column.
@@ -32,8 +44,9 @@ ADD_FILE_SIZE_COLUMN_SQL = (
 
 INSERT_OR_REPLACE_HISTORY_SQL = (
     "INSERT OR REPLACE INTO history "
-    "  (source_path, dest_path, job_type, command, status, error_msg, stdout, timestamp, file_size) "
-    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    "  (source_path, dest_path, job_type, command, status, error_msg, stdout, timestamp, file_size, "
+    "   verify_status, verify_reason, verify_format, verify_duration_s) "
+    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 )
 
 

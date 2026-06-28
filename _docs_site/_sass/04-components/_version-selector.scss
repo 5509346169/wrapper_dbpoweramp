@@ -1,0 +1,20 @@
+.version-selector {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin-top: var(--s-5);
+  font-size: var(--step--1);
+  color: var(--ink-soft);
+}
+.version-selector__label {
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+}
+.version-selector__select {
+  background: var(--paper);
+  color: var(--ink);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  padding: var(--s-1) var(--s-2);
+  font: inherit;
+}

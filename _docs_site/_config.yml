@@ -1,0 +1,100 @@
+title: dBpoweramp Wrapper
+tagline: Audiophile-grade audio conversion, on your terms.
+description: >-
+  Convert audio files between formats with or without dBpoweramp installed,
+  on Linux or Windows. Audiophile-grade presets, multi-backend encoding,
+  lossless-to-lossy-aware lossy handling, sidecar preservation, and resume
+  support for libraries of any size.
+url: "https://5509346169.github.io"
+baseurl: "/wrapper_dbpoweramp"
+repo: "5509346169/wrapper_dbpoweramp"
+
+# Build settings
+markdown: kramdown
+highlighter: rouge
+permalink: /:path/
+kramdown:
+  input: GFM
+  syntax_highlighter: rouge
+  hard_wrap: false
+  toc_levels: "2,3"
+
+# Plugins — every entry must be a real Gem in Gemfile
+plugins:
+  - jekyll-seo-tag
+  - jekyll-sitemap
+  - jekyll-feed
+  - jekyll-redirect-from
+  - jekyll-include-cache
+
+# Skip everything that is not site content. _docs_site/site/ is the deploy artifact;
+# _site/ is Jekyll's intermediate build directory; assets/vendor/ holds the
+# locally-bundled JS/CSS for runtime; scripts/ is the build harness.
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - Rakefile
+  - Makefile
+  - package.json
+  - package-lock.json
+  - node_modules
+  - vendor
+  - scripts
+  - README.md
+  - .bundle
+  - .jekyll-cache
+  - .jekyll-metadata
+  - site
+  - _site
+  - _sass
+  # Sass sources are compiled by scripts/build-css.mjs into assets/css/main.css.
+  # They must never ship to site/ as .scss files. Jekyll uses Ruby's
+  # File.fnmatch (not bash glob), so we use **/*.scss to cover every depth.
+  - "**/*.scss"
+
+include:
+  - _pages
+
+# Defaults consumed by layouts
+defaults:
+  - scope:
+      path: ""
+      type: pages
+    values:
+      layout: default
+  - scope:
+      path: ""
+      type: posts
+    values:
+      layout: default
+
+# Theme knobs
+theme:
+  fonts:
+    display: "Bodoni Moda"
+    body: "Geist"
+    mono: "JetBrains Mono"
+  palette:
+    light:
+      paper: "#f6f4ee"
+      ink: "#1a1d21"
+      ink_soft: "#4a4f55"
+      rule: "#d9d4c6"
+      accent: "#2a7ea4"
+      accent_warm: "#c08a3e"
+    dark:
+      paper: "#0f1216"
+      ink: "#ece8df"
+      ink_soft: "#a8a59b"
+      rule: "#2a2e34"
+      accent: "#6fc1d4"
+      accent_warm: "#d8a85c"
+
+# Site-wide metadata
+author:
+  name: dBpoweramp Wrapper maintainers
+
+# Build output options
+keep_files: []
+future: true
+show_dir_listing: false

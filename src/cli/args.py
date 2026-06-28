@@ -21,24 +21,30 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 
 def _add_required_args(parser: "ArgumentParser") -> None:
-    """Add the three required positional-style flags: -I, -O, -p."""
+    """Add the three required positional-style flags: -I, -O, -p.
+
+    These are NOT declared ``required=True`` at the argparse level: that
+    would block ``--db-version`` and the ``db`` subcommand, neither of
+    which need the conversion flags. ``validate_args`` enforces them
+    after parsing.
+    """
     parser.add_argument(
         "-I", "--input",
-        required=True,
         type=Path,
+        default=None,
         metavar="PATH",
         help="File or directory to convert",
     )
     parser.add_argument(
         "-O", "--output",
-        required=True,
         type=Path,
+        default=None,
         metavar="PATH",
         help="Output root directory",
     )
     parser.add_argument(
         "-p", "--preset",
-        required=True,
+        default=None,
         metavar="NAME",
         help="Preset name from presets.yaml (e.g. flac-lossless, mp3-320-cbr)",
     )
@@ -121,7 +127,7 @@ def _add_lossy_args(parser: "ArgumentParser") -> None:
 
 
 def _add_execution_args(parser: "ArgumentParser") -> None:
-    """Add -w/--workers, --worker-model, --execution-mode, -v/--verbose."""
+    """Add -w/--workers, --worker-model, --execution-mode, -v/--verbose, --verify-output, --verify-skip."""
     parser.add_argument(
         "-w", "--workers",
         type=int,
@@ -145,6 +151,37 @@ def _add_execution_args(parser: "ArgumentParser") -> None:
         "-v", "--verbose",
         action="store_true",
         help="Live verbose conversion stream",
+    )
+    parser.add_argument(
+        "--verify-output",
+        choices=["none", "full"],
+        default="full",
+        metavar="MODE",
+        help=(
+            "Post-conversion integrity check (default: full). "
+            "'full' decodes every convert output frame-by-frame via "
+            "libsndfile/miniaudio/mutagen; 'none' keeps the legacy "
+            "existence+size check only."
+        ),
+    )
+    parser.add_argument(
+        "--verify-skip",
+        action="store_true",
+        help=(
+            "Pre-verify skip candidates: before honouring a SUCCESS history "
+            "row for a convert/copy job, re-decode the on-disk output via "
+            "src.audio.integrity.verify_file. If the output is corrupt, the "
+            "job is demoted from SKIP to CONVERT (so the pipeline re-runs it) "
+            "and the original SUCCESS row is overwritten with the new result. "
+            "Off by default — pre-verify adds a full-frame decode to every "
+            "skip candidate, which can dominate runtime on large libraries."
+        ),
+    )
+    parser.add_argument(
+        "--db-version",
+        action="store_true",
+        dest="db_version",
+        help="Print history DB schema version and exit.",
     )
 
 
@@ -197,6 +234,12 @@ def parse_args(argv: list[str] | None = None) -> "Namespace":
 
     Returns:
         An argparse.Namespace with all CLI flags as attributes.
+
+    Note:
+        ``-I/-O/-p`` are intentionally NOT marked ``required=True`` at the
+        argparse level: that would block ``--db-version`` and the ``db``
+        subcommand, neither of which need the conversion flags.
+        ``validate_args`` enforces them after parsing.
     """
     parser = argparse.ArgumentParser(
         prog="wrapper-dbpoweramp",
@@ -209,6 +252,47 @@ def parse_args(argv: list[str] | None = None) -> "Namespace":
     _add_lossy_args(parser)
     _add_execution_args(parser)
     _add_mode_args(parser)
+
+    # db subcommand group
+    subparsers = parser.add_subparsers(dest="command", help="Subcommands")
+    db_parser = subparsers.add_parser("db", help="Inspect the conversion history database.")
+    db_sub = db_parser.add_subparsers(dest="db_command", help="Database subcommands")
+
+    def _add_db_path_arg(p: "ArgumentParser") -> None:
+        """Add --db-path and --db to a db sub-subparser."""
+        p.add_argument(
+            "--db-path",
+            type=Path,
+            default=None,
+            metavar="PATH",
+            help="Path to history.db (default: settings.history.db_path).",
+        )
+        p.add_argument(
+            "--db",
+            type=Path,
+            default=None,
+            dest="db_path",
+            metavar="PATH",
+            help="Alias for --db-path.",
+        )
+
+    check_parser = db_sub.add_parser(
+        "check",
+        help="Print schema version, audit history, and exit.",
+    )
+    _add_db_path_arg(check_parser)
+
+    migrate_parser = db_sub.add_parser(
+        "migrate",
+        help="Force-migrate the DB to the latest schema (auto-runs on first run anyway).",
+    )
+    _add_db_path_arg(migrate_parser)
+
+    doctor_parser = db_sub.add_parser(
+        "doctor",
+        help="Like 'check', but also probes for orphaned .bak files and schema drift.",
+    )
+    _add_db_path_arg(doctor_parser)
 
     return parser.parse_args(argv)
 
@@ -279,3 +363,22 @@ def validate_args(args: "Namespace") -> None:
         parent = args.build_index.parent
         if not parent.exists():
             _fail(f"--build-index parent directory does not exist: {parent}")
+
+    # --db-version and the `db` subcommand are self-contained: they do not
+    # require the conversion flags (-I/-O/-p). Skip required-flag enforcement
+    # when either is in effect so the dispatchers can return early.
+    if getattr(args, "db_version", False):
+        return
+    if getattr(args, "command", None) == "db":
+        return
+
+    # Rule 8: -I, -O, -p are required for the conversion pipeline.
+    missing: list[str] = []
+    if getattr(args, "input", None) is None:
+        missing.append("-I/--input")
+    if getattr(args, "output", None) is None:
+        missing.append("-O/--output")
+    if getattr(args, "preset", None) is None:
+        missing.append("-p/--preset")
+    if missing:
+        _fail(f"the following arguments are required: {', '.join(missing)}")

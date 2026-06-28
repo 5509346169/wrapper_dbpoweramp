@@ -80,6 +80,7 @@ def _make_settings() -> Settings:
             default_workers=4,
             probe_workers=8,
             worker_model="thread",
+            execution_mode="hybrid",
         ),
         logging=LoggingConfig(level="INFO"),
     )

@@ -1,0 +1,72 @@
+# Preset metadata used by the codec-chip component and the landing page cards.
+# Source of truth is presets.yaml in the project root; this file mirrors it
+# with display-ready fields (icon glyph, color tag, summary, audience).
+# When presets.yaml changes, regenerate this file.
+
+- slug: flac-lossless
+  name: FLAC Lossless
+  codec: flac
+  type: lossless
+  bitrate: compression-level-5
+  summary: FLAC encoding at compression level 5 — best balance of size and speed.
+  icon: flac            # flac | mp3 | opus | aac | qaac
+  color: cyan
+  backends: [native_ffmpeg, native_dbpoweramp, wine_dbpoweramp]
+  audience: [user, power-user]
+
+- slug: mp3-v0-vbr
+  name: MP3 V0 VBR
+  codec: mp3
+  type: lossy
+  bitrate: ~245 kbps VBR
+  summary: LAME MP3 V0 VBR (~245 kbps) — the audiophile's "transparent" MP3.
+  icon: mp3
+  color: cyan
+  backends: [native_ffmpeg, native_dbpoweramp, wine_dbpoweramp]
+  audience: [user]
+
+- slug: mp3-320-cbr
+  name: MP3 320 CBR
+  codec: mp3
+  type: lossy
+  bitrate: 320 kbps CBR
+  summary: Constant-bitrate MP3 320 — universally compatible.
+  icon: mp3
+  color: cyan
+  backends: [native_ffmpeg, native_dbpoweramp, wine_dbpoweramp]
+  audience: [user]
+
+- slug: aac-vbr-high
+  name: AAC VBR High
+  codec: aac
+  type: lossy
+  bitrate: ~256 kbps VBR
+  summary: FDK-AAC at VBR mode 5 — high-quality AAC at modest bitrates.
+  icon: aac
+  color: cyan
+  backends: [native_ffmpeg, native_dbpoweramp, wine_dbpoweramp]
+  audience: [user, power-user]
+  notes: Requires ffmpeg build with libfdk_aac.
+
+- slug: qaac-cvbr-256
+  name: QAAC CVBR 256
+  codec: aac
+  type: lossy
+  bitrate: 256 kbps CVBR
+  summary: Apple's QAAC encoder via CoreAudioToolbox — the AAC reference.
+  icon: qaac
+  color: amber
+  backends: [native_dbpoweramp, wine_dbpoweramp]
+  audience: [power-user]
+  notes: Requires CoreAudioToolbox.dll from iTunes; not available with native_ffmpeg.
+
+- slug: opus-128
+  name: Opus 128
+  codec: opus
+  type: lossy
+  bitrate: 128 kbps
+  summary: Opus at 128 kbps — modern codec, transparent at this bitrate.
+  icon: opus
+  color: cyan
+  backends: [native_ffmpeg, native_dbpoweramp, wine_dbpoweramp]
+  audience: [user]

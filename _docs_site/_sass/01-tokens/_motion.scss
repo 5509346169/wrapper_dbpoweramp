@@ -1,0 +1,26 @@
+// One entrance sequence + reduced-motion fallback. No decorative micro-motion.
+
+:root {
+  --ease-out-soft: cubic-bezier(0.16, 0.84, 0.32, 1);
+  --ease-in-out-quiet: cubic-bezier(0.65, 0.05, 0.36, 1);
+  --dur-1: 120ms;
+  --dur-2: 240ms;
+  --dur-3: 480ms;
+  --dur-4: 800ms;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .fade-up {
+    opacity: 0;
+    transform: translateY(8px);
+    animation: fade-up var(--dur-3) var(--ease-out-soft) forwards;
+    animation-delay: var(--fade-up-delay, 0ms);
+  }
+  .fade-up-2 { --fade-up-delay: 80ms; }
+  .fade-up-3 { --fade-up-delay: 160ms; }
+  .fade-up-4 { --fade-up-delay: 240ms; }
+  .fade-up-5 { --fade-up-delay: 320ms; }
+  @keyframes fade-up {
+    to { opacity: 1; transform: translateY(0); }
+  }
+}

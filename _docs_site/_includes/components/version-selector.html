@@ -1,0 +1,16 @@
+{%- comment -%}
+  Version selector — driven by _data/versions.yml. Renders nothing if the
+  file is empty. JS in assets/vendor/theme.js handles the change event.
+{%- endcomment -%}
+{%- if site.data.versions and site.data.versions.size > 0 -%}
+<label class="version-selector">
+  <span class="version-selector__label">Version</span>
+  <select class="version-selector__select" data-version-select>
+    {%- for v in site.data.versions -%}
+      <option value="{{ v.url }}"{% if v.current %} selected{% endif %}>
+        {{ v.version }} — {{ v.date }}
+      </option>
+    {%- endfor -%}
+  </select>
+</label>
+{%- endif -%}

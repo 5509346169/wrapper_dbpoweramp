@@ -1,0 +1,122 @@
+# Hub-and-spoke navigation tree for the Jekyll site.
+# Consumed by _includes/layout/sidebar.html via site.data.navigation.
+# Each top-level entry is a section; children render in `order`.
+
+- title: Getting Started
+  slug: getting-started
+  order: 10
+  landing: true
+  entries:
+    - title: Installation
+      slug: installation
+      url: /installation/
+      audience: [user]
+      summary: Install Python, FFmpeg, Wine, and dBpoweramp on Linux or Windows.
+      order: 10
+    - title: Overview
+      slug: overview
+      url: /overview/
+      audience: [user, engineer]
+      summary: Project purpose, use cases, and design principles.
+      order: 20
+
+- title: Configuration
+  slug: configuration
+  order: 20
+  entries:
+    - title: settings.yaml
+      slug: configuration
+      url: /configuration/
+      audience: [user, engineer]
+      summary: Full reference for every settings key, type, and default.
+      order: 10
+    - title: Command-Line Interface
+      slug: cli
+      url: /cli/
+      audience: [user, engineer]
+      summary: Every flag, option, and DB subcommand grouped by purpose.
+      order: 20
+    - title: Presets
+      slug: presets
+      url: /presets/
+      audience: [user]
+      summary: Preset schema, per-backend encoder args, and how to write your own.
+      order: 30
+
+- title: Architecture
+  slug: architecture
+  order: 30
+  landing: true
+  entries:
+    - title: Architecture
+      slug: architecture
+      url: /architecture/
+      audience: [engineer]
+      summary: Pipeline architecture, component map, data flow, and concurrency model.
+      order: 10
+    - title: Workflow
+      slug: workflow
+      url: /workflow/
+      audience: [engineer]
+      summary: Phases of a conversion run from CLI parse to cleanup.
+      order: 20
+    - title: Backends
+      slug: backends
+      url: /backends/
+      audience: [engineer]
+      summary: native_ffmpeg, native_dbpoweramp, and wine_dbpoweramp internals.
+      order: 30
+
+- title: Engineering
+  slug: engineering
+  order: 40
+  entries:
+    - title: File Index System
+      slug: file-index
+      url: /file-index/
+      audience: [engineer]
+      summary: The tmp/index.db temporary SQLite snapshot and its lifecycle.
+      order: 10
+    - title: Lossy Source Handling
+      slug: lossy-handling
+      url: /lossy-handling/
+      audience: [user, engineer]
+      summary: Three-tier lossy detection cascade and the four lossy actions.
+      order: 20
+    - title: Sidecar Files
+      slug: sidecar-files
+      url: /sidecar-files/
+      audience: [user]
+      summary: How lyrics and cover art are copied alongside output files.
+      order: 30
+    - title: Error Handling
+      slug: error-handling
+      url: /error-handling/
+      audience: [engineer]
+      summary: Error categories, exception classes, exit codes, and verify results.
+      order: 40
+    - title: Testing
+      slug: testing
+      url: /testing/
+      audience: [engineer]
+      summary: How to run the test suite and the TDD workflow.
+      order: 50
+
+- title: Reference
+  slug: reference
+  order: 50
+  entries:
+    - title: Public API
+      slug: api
+      url: /api/
+      audience: [engineer]
+      layout: reference
+      summary: Programmatic entry points for scripting and integration.
+      order: 10
+    - title: Modules
+      slug: modules
+      url: /modules/
+      audience: [engineer]
+      layout: reference
+      summary: Every src/ module with classes, dataclasses, and key functions.
+      order: 20

@@ -16,6 +16,7 @@ class JobEventKind(str, Enum):
     FINISHED = "finished"
     LOG = "log"
     ACTIVITY = "activity"
+    VERIFY_RESULT = "verify_result"  # NEW: payload is (infile, status, reason, fmt, dur_s)
 
 
 def _make_event_queue(worker_model: str) -> Queue:

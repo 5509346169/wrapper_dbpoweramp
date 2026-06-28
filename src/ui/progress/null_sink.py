@@ -36,3 +36,7 @@ class NullProgressSink:
 
     def set_phase_label(self, label: str) -> None:
         pass
+
+    def log_verify_result(self, infile: str, status: str, reason: str | None,
+                         fmt: str | None, duration_s: float | None) -> None:
+        pass

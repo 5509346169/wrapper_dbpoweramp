@@ -1,0 +1,29 @@
+// 8-pt rhythm with intentional asymmetric hero breaks.
+
+:root {
+  --s-0: 0;
+  --s-1: 0.25rem;  //  4
+  --s-2: 0.5rem;   //  8
+  --s-3: 0.75rem;  // 12
+  --s-4: 1rem;     // 16
+  --s-5: 1.5rem;   // 24
+  --s-6: 2rem;     // 32
+  --s-7: 3rem;     // 48
+  --s-8: 4rem;     // 64
+  --s-9: 6rem;     // 96
+  --s-10: 8rem;    // 128
+
+  --rule-w: 1px;
+
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 8px;
+
+  --shell-max: 1440px;
+  --prose-max: 68ch;
+  --rail-w-left: 240px;
+  --rail-w-right: 200px;
+
+  // Hero asymmetric offset — used on landing pages.
+  --hero-asym: 12vw;
+}

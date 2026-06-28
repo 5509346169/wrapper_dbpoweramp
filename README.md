@@ -37,7 +37,7 @@ python main.py -I ~/Music -O ~/Converted -p flac-lossless
 pip install -r requirements.txt
 ```
 
-`requirements.txt` declares only two runtime dependencies: `pyyaml` and `rich`.
+`requirements.txt` declares six runtime dependencies: `pyyaml`, `rich`, `soundfile`, `miniaudio`, `numpy`, and `mutagen`.
 
 > **QAAC note:** The `qaac-cvbr-256` preset requires Apple's `CoreAudioToolbox.dll` from an iTunes install. On Linux, install it inside the Wine prefix alongside dBpoweramp. On Windows, install it alongside dBpoweramp. If absent, QAAC fails with a clear error — not a wrapper bug.
 
@@ -53,7 +53,9 @@ pip install -r requirements.txt
 | **Parallel conversion** | Thread or process pool (default: 4 threads, configurable with `-w`). |
 | **Sidecar preservation** | Lyrics (`.lrc`, `.txt`) and cover art (`.jpg`, `.png`) are copied alongside converted files. |
 | **Resume support** | Re-running skips already-comverted files. File-size tracking catches partial outputs. |
-| **Output verification** | Every output file is checked for non-zero size before the job is marked SUCCESS. |
+| **Output verification (post-convert)** | Every converted file is full-frame decoded via `soundfile` / `miniaudio` / `mutagen` fallback. Corrupt outputs are marked `FAILED` with the `Not - <reason>` form, not `SUCCESS`. |
+| **Pre-verify skip gate (`--verify-skip`)** | Opt-in: re-decodes each skip candidate before honouring the history row. Demotes a corrupt skip to a reconvert. |
+| **Database schema migration** | First run on an older `history.db` automatically creates `<db>.bak-<UTCISO>` and a `migration_audit` row. |
 | **Scan cache** | Repeat runs skip the directory walk — only the lossy-probe phase runs from scratch. |
 
 ---
@@ -114,6 +116,32 @@ python main.py --index my_index.db -O ~/Converted -p flac-lossless
 python main.py -I ~/Music -O ~/Converted -p flac-lossless --list-lossy
 ```
 
+### Disable post-convert integrity verification (legacy mode)
+
+```sh
+python main.py -I ~/Music -O ~/Converted -p flac-lossless --verify-output none
+```
+
+### Re-decode skip candidates before trusting them (catches pre-existing corruption)
+
+```sh
+python main.py -I ~/Music -O ~/Converted -p flac-lossless --verify-skip
+```
+
+### Check history DB schema version
+
+```sh
+python main.py --db-version
+```
+
+### Inspect or migrate the history DB
+
+```sh
+python main.py db check       # print schema version, audit history, backup status
+python main.py db migrate     # force-migrate to latest schema
+python main.py db doctor     # check + orphaned .bak probe
+```
+
 ---
 
 ## Available presets
@@ -150,6 +178,10 @@ python main.py -I ~/Music -O ~/Converted -p flac-lossless --list-lossy
 | `--list-lossy` | Scan and print lossy files, then exit |
 | `--build-index PATH` | Build index to file and exit |
 | `--index PATH` | Use a pre-built index |
+| `--verify-output {none,full}` | Post-convert integrity check mode (default: `full`) |
+| `--verify-skip` | Pre-verify skip candidates before honouring history row |
+| `--db-version` | Print DB schema version and exit (see DB inspection commands) |
+| `db {check,migrate,doctor}` | Inspect or migrate the history database |
 | `-v, --verbose` | Live verbose output stream |
 
 Full reference: see [docs/cli.md](docs/cli.md)
@@ -159,6 +191,39 @@ Full reference: see [docs/cli.md](docs/cli.md)
 ## Configuration
 
 `settings.yaml` controls backend defaults, worker counts, and history database location. See [docs/configuration.md](docs/configuration.md) for the complete reference.
+
+---
+
+## DB inspection commands
+
+| Command | Description |
+|---------|-------------|
+| `python main.py db check [--db-path PATH]` | Print schema version, audit history, backup status; exit 0. |
+| `python main.py db migrate [--db-path PATH]` | Force-migrate to latest schema (auto-runs on first conversion anyway). |
+| `python main.py db doctor [--db-path PATH]` | `check` plus an orphaned-`.bak` probe. |
+| `python main.py --db-version` | Print version and exit (one-liner alternative to `db check`). |
+
+---
+
+## Output integrity verification
+
+Every `convert` output is integrity-checked before the job is marked SUCCESS, using a three-tier backend chain:
+
+| Backend | Trigger | What it checks |
+|---------|---------|----------------|
+| `soundfile` (libsndfile) | FLAC, WAV, AIFF, CAF, and other formats supported by libsndfile | Full-frame decode; FLAC embedded MD5 verified on close; truncation guard (declared frames > 1 % above decoded frames) |
+| `miniaudio` | MP3, OGG, Opus, and other formats not handled by libsndfile | Streaming decode; raises on sync/frame errors |
+| `mutagen` | Last resort fallback for unsupported extensions | Tag/metadata sanity only |
+
+Output forms rendered by the progress sink:
+
+| `VerifyResult` status | Rendered line |
+|-----------------------|---------------|
+| `OK` | `Okay` |
+| `NOT_OK` | `Not - <reason>` (job marked `FAILED`) |
+| `UNSUPPORTED` | `Skipped - <reason>` (soft warning, job still succeeds) |
+
+The `--verify-output {none,full}` flag controls post-convert verification. The `--verify-skip` flag adds a pre-verify gate that runs **before** `ConversionDB.should_skip()`: it re-decodes each skip-candidate's on-disk output; if it returns `NOT_OK`, the job is demoted from `SKIP` to `CONVERT` and will be re-run.
 
 ---
 

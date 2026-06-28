@@ -26,6 +26,7 @@ def _drain_events_into_ui(
     FINISHED events always remove the bar (idempotent - safe if already removed)
     and advance the master bar count for real-time progress.
     ACTIVITY events update the activity indicator (copy/convert).
+    VERIFY_RESULT events are forwarded to the progress sink for display.
     """
     while True:
         try:
@@ -49,6 +50,9 @@ def _drain_events_into_ui(
                 progress.finish_subtask(subtask_id)
                 # Advance master bar immediately for real-time count update
                 progress.advance()
+        elif kind == JobEventKind.VERIFY_RESULT:
+            # payload is (infile, status, reason, fmt, duration_s)
+            progress.log_verify_result(*payload)  # type: ignore[attr-defined]
 
 
 def _run_event_drain_thread(

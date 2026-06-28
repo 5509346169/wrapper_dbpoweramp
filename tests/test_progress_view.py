@@ -51,6 +51,26 @@ class RecordingProgressSink:
     def stop_phase(self) -> None:
         self._record("stop_phase", (), {})
 
+    def set_activity(self, activity: str) -> None:
+        self._record("set_activity", (activity,), {})
+
+    def set_phase_label(self, label: str) -> None:
+        self._record("set_phase_label", (label,), {})
+
+    def log_verify_result(
+        self,
+        infile: str,
+        status: str,
+        reason: str | None,
+        fmt: str | None,
+        duration_s: float | None,
+    ) -> None:
+        self._record(
+            "log_verify_result",
+            (infile, status, reason, fmt, duration_s),
+            {},
+        )
+
 
 # ---------------------------------------------------------------------------
 # Scan tests
@@ -103,7 +123,8 @@ def test_drain_routes_started_to_start_subtask() -> None:
     events.put((JobEventKind.FINISHED, "file1.flac"))
 
     sink = RecordingProgressSink()
-    _drain_events_into_ui(events, sink)
+    job_tasks: dict = {}
+    _drain_events_into_ui(events, sink, job_tasks)
 
     methods = [c[0] for c in sink.calls]
     assert "start_subtask" in methods
@@ -123,7 +144,8 @@ def test_drain_routes_log_to_log() -> None:
     events.put((JobEventKind.LOG, "Encoding progress: 50%"))
 
     sink = RecordingProgressSink()
-    _drain_events_into_ui(events, sink)
+    job_tasks: dict = {}
+    _drain_events_into_ui(events, sink, job_tasks)
 
     assert sink.calls == [("log", ("Encoding progress: 50%",), {})]
 
@@ -139,14 +161,18 @@ def test_drain_multiple_inflight_jobs_ordered() -> None:
     events.put((JobEventKind.FINISHED, "b.mp3"))
 
     sink = RecordingProgressSink()
-    _drain_events_into_ui(events, sink)
+    job_tasks: dict = {}
+    _drain_events_into_ui(events, sink, job_tasks)
 
     methods = [c[0] for c in sink.calls]
+    # Each job produces: start_subtask, finish_subtask, advance
     assert methods == [
         "start_subtask",
         "start_subtask",
         "finish_subtask",
+        "advance",
         "finish_subtask",
+        "advance",
     ]
     # Verify each finish_subtask received the SubtaskID from its matching start_subtask
     start_calls = [c for c in sink.calls if c[0] == "start_subtask"]
@@ -166,7 +192,8 @@ def test_drain_unknown_event_kind_silent() -> None:
     events.put(("UNKNOWN", "file1.flac"))
 
     sink = RecordingProgressSink()
-    _drain_events_into_ui(events, sink)
+    job_tasks: dict = {}
+    _drain_events_into_ui(events, sink, job_tasks)
 
     assert sink.calls == []
 
@@ -255,6 +282,22 @@ class _StubBackend:
 
         if job.job_type == "skip":
             return JobResult(job=job, status="SKIPPED")
+        # Materialise an output file so the post-write verifier's existence
+        # check has something to act on. Try to write a tiny but valid audio
+        # file (FLAC for .flac/.ogg/.opus outputs, a real MP3 frame for .mp3)
+        # so the verifier reports OK; fall back to harmless bytes for
+        # anything we can't write. Tests that don't care about the verify
+        # step just need existence + non-empty size.
+        if job.job_type in ("convert", "copy") and job.outfile is not None:
+            job.outfile.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                import numpy as np
+                import soundfile as sf
+
+                data = np.zeros(2205, dtype=np.float32)  # 50ms silence
+                sf.write(str(job.outfile), data, 44100)
+            except Exception:
+                job.outfile.write_bytes(b"\x00" * 16)
         return JobResult(job=job, status=self._status)
 
 
@@ -359,7 +402,7 @@ def test_run_all_parallel_worker_produces_events(
         if not events.empty():
             break
         time.sleep(0.01)
-    _drain_events_into_ui(events, sink)
+    _drain_events_into_ui(events, sink, {})
 
     write_queue.flush()
     methods = [c[0] for c in sink.calls]

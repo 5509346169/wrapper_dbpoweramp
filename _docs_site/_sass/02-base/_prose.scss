@@ -1,0 +1,31 @@
+// Prose container shared by every reading layout.
+
+.prose {
+  max-width: var(--prose-max);
+  margin: 0 auto;
+  padding: var(--s-7) var(--s-5) var(--s-9);
+  font-size: var(--step-0);
+  line-height: var(--lh-prose);
+  color: var(--ink);
+}
+.prose > * + * { margin-top: var(--s-4); }
+.prose > h2 { margin-top: var(--s-7); }
+.prose > h3 { margin-top: var(--s-5); }
+
+.prose--wide { max-width: 80ch; }
+
+.prose ul, .prose ol {
+  padding-left: 1.4em;
+  margin: var(--s-4) 0;
+}
+.prose li + li { margin-top: var(--s-1); }
+
+.prose img {
+  margin: var(--s-5) auto;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--rule);
+}
+
+.prose pre {
+  margin: var(--s-5) 0;
+}
