@@ -40,15 +40,15 @@ def main() -> int:
 
     # --build-index mode
     if args.build_index is not None:
-        return build_index.run(ctx)
+        return build_index(ctx)
 
     # --index mode
     if args.index is not None:
-        return run_from_index.run(ctx)
+        return run_from_index(ctx)
 
     # --dry-run / --list-lossy are inspection modes handled inside run_pipeline
     # (the pipeline functions check these flags internally)
-    return run_pipeline.run(ctx)
+    return run_pipeline(ctx)
 
 
 def _main() -> int:

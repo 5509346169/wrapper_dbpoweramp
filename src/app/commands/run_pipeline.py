@@ -84,7 +84,10 @@ def run(ctx: "AppContext") -> int:
             check_lossy_gate(len(lossy_files_found), ctx)
 
         # ── Pre-filter ──────────────────────────────────────────────────────
-        pending_jobs, skipped_jobs = prefilter_jobs(jobs, ctx)
+        # Reuse the same sink as enrich() so the pre-verify bar matches the
+        # rest of the pipeline; pass None in verbose mode to keep stdout clean.
+        prefetch_sink = RichProgressSink() if not ctx.verbose else None
+        pending_jobs, skipped_jobs = prefilter_jobs(jobs, ctx, sink=prefetch_sink)
         phase_state.pending_jobs = pending_jobs
         phase_state.skipped_jobs = skipped_jobs
 

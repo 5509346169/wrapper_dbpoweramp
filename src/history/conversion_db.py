@@ -18,6 +18,7 @@ from src.history.schema import (
     apply_history_pragmas,
 )
 from src.history.migrations import migrate_to_current
+from rich import print as rprint
 
 
 class ConversionDB:
@@ -38,7 +39,7 @@ class ConversionDB:
             try:
                 result = migrate_to_current(db_path)
                 for msg in result.messages:
-                    print(f"[cyan][migration][/cyan] {msg}")
+                    rprint(f"[cyan][migration][/cyan] {msg}")
             except Exception as exc:
                 # Fall back to backup on migration failure (migrate_to_current
                 # restores the backup before raising, but we surface the error).

@@ -1,4 +1,8 @@
-"""commands/__init__.py: Re-exports for the commands package."""
+"""commands/__init__.py: Re-exports for the commands package.
+
+Each entry is the inner `run` callable from the corresponding module, so call
+sites in main.py use the `name(args_or_ctx)` form.
+"""
 
 from src.app.commands.build_index import run as build_index
 from src.app.commands.db_check import run as db_check
