@@ -256,26 +256,43 @@ def parse_args(argv: list[str] | None = None) -> "Namespace":
     # db subcommand group
     subparsers = parser.add_subparsers(dest="command", help="Subcommands")
     db_parser = subparsers.add_parser("db", help="Inspect the conversion history database.")
-    db_parser.add_argument(
-        "--db-path",
-        type=Path,
-        default=None,
-        metavar="PATH",
-        help="Path to history.db (default: settings.history.db_path).",
-    )
     db_sub = db_parser.add_subparsers(dest="db_command", help="Database subcommands")
-    db_sub.add_parser(
+
+    def _add_db_path_arg(p: "ArgumentParser") -> None:
+        """Add --db-path and --db to a db sub-subparser."""
+        p.add_argument(
+            "--db-path",
+            type=Path,
+            default=None,
+            metavar="PATH",
+            help="Path to history.db (default: settings.history.db_path).",
+        )
+        p.add_argument(
+            "--db",
+            type=Path,
+            default=None,
+            dest="db_path",
+            metavar="PATH",
+            help="Alias for --db-path.",
+        )
+
+    check_parser = db_sub.add_parser(
         "check",
         help="Print schema version, audit history, and exit.",
     )
-    db_sub.add_parser(
+    _add_db_path_arg(check_parser)
+
+    migrate_parser = db_sub.add_parser(
         "migrate",
         help="Force-migrate the DB to the latest schema (auto-runs on first run anyway).",
     )
-    db_sub.add_parser(
+    _add_db_path_arg(migrate_parser)
+
+    doctor_parser = db_sub.add_parser(
         "doctor",
         help="Like 'check', but also probes for orphaned .bak files and schema drift.",
     )
+    _add_db_path_arg(doctor_parser)
 
     return parser.parse_args(argv)
 

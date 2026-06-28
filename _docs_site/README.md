@@ -33,6 +33,15 @@ make docs-serve
 
 The first run will compile Sass, bundle the JS modules into `assets/vendor/`, and serve the site at <http://127.0.0.1:4000>.
 
+### Windows: Ruby dev tools
+
+If `bundle install` fails with `You have to install development tools first` or `Failed to build gem native extension` while compiling `bigdecimal` / `sass-embedded` / `google-protobuf`, you need MSYS2/MinGW dev tools. Either:
+
+- **Recommended**: re-run the `Ruby+Devkit` installer from [rubyinstaller.org](https://rubyinstaller.org/downloads/) (the "with DevKit" flavor bundles MSYS2), then from any terminal run `ridk install` and choose option `3` (MSYS2/MINGW development toolchain).
+- **If you already have DevKit installed**: open the "MSYS2 MINGW64" Start Menu shortcut (or run `ridk enable` once) so the toolchain is on `PATH`, then re-run `bundle install`.
+
+`.bundle/config` locks Bundler to `ruby,x64-mingw-ucrt` so it prefers pre-compiled platform gems (no native compilation needed for most of the chain). If you are on a different platform, update `.bundle/config` accordingly.
+
 ## Build a deployable artifact
 
 ```sh

@@ -1,0 +1,3 @@
+theme	assets/vendor/theme.js	es2020
+waveform	assets/vendor/waveform.js	es2020
+search-palette	assets/vendor/search-palette.js	es2020

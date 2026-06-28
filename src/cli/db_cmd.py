@@ -19,9 +19,19 @@ if TYPE_CHECKING:
 
 
 def _resolve_db_path(args: "Namespace") -> Path:
-    """Resolve the database path from CLI args or settings."""
+    """Resolve the database path from CLI args or settings.
+
+    Checks, in order:
+      1. ``args.db_path``  – set by ``--db-path`` on the ``db`` subcommand.
+      2. ``args.db``        – set by ``--db`` on the top-level parser
+                              (must appear before the ``db`` subcommand keyword:
+                              ``--db <path> db check``, not ``db check --db <path>``).
+      3. ``settings.history.db_path`` from settings.yaml.
+    """
     if args.db_path is not None:
         return Path(args.db_path)
+    if getattr(args, "db", None) is not None:
+        return Path(args.db)
     # Import lazily to avoid circular imports at module load time.
     from src.config.settings_loader import load_settings
 

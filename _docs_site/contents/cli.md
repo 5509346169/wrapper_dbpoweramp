@@ -367,7 +367,11 @@ Print schema version, audit history, and backup status, then exit 0.
 ```sh
 python main.py db check
 python main.py db check --db-path /path/to/history.db
+python main.py db check --db /path/to/history.db     # alias for --db-path
+python main.py --db /path/to/history.db db check      # top-level --db (must precede the subcommand keyword)
 ```
+
+The `--db` flag is an alias for `--db-path` on this subcommand. When passed at the top level, argparse forwards it to the `db` dispatcher, which falls through to `args.db` if `args.db_path` is unset.
 
 Sample output:
 
@@ -386,7 +390,11 @@ Force-migrate the history database to the latest schema. The migration auto-runs
 ```sh
 python main.py db migrate
 python main.py db migrate --db-path /path/to/history.db
+python main.py db migrate --db /path/to/history.db
+python main.py --db /path/to/history.db db migrate
 ```
+
+A backup of the form `<db>.bak-<UTCISO>` is created before any migration runs.
 
 ### `python main.py db doctor`
 
@@ -395,6 +403,8 @@ Like `db check`, but also probes for orphaned `.bak` files and schema drift.
 ```sh
 python main.py db doctor
 python main.py db doctor --db-path /path/to/history.db
+python main.py db doctor --db /path/to/history.db
+python main.py --db /path/to/history.db db doctor
 ```
 
 ## History

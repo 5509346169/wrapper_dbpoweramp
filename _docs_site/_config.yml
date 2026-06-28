@@ -13,9 +13,6 @@ repo: "5509346169/wrapper_dbpoweramp"
 markdown: kramdown
 highlighter: rouge
 permalink: /:path/
-sass:
-  style: :expanded
-  sass_dir: _sass
 kramdown:
   input: GFM
   syntax_highlighter: rouge
@@ -29,7 +26,6 @@ plugins:
   - jekyll-feed
   - jekyll-redirect-from
   - jekyll-include-cache
-  - jekyll-optional-front-matter
 
 # Skip everything that is not site content. _docs_site/site/ is the deploy artifact;
 # _site/ is Jekyll's intermediate build directory; assets/vendor/ holds the
@@ -50,6 +46,11 @@ exclude:
   - .jekyll-metadata
   - site
   - _site
+  - _sass
+  # Sass sources are compiled by scripts/build-css.mjs into assets/css/main.css.
+  # They must never ship to site/ as .scss files. Jekyll uses Ruby's
+  # File.fnmatch (not bash glob), so we use **/*.scss to cover every depth.
+  - "**/*.scss"
 
 include:
   - _pages

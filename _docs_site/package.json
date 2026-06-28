@@ -6,16 +6,18 @@
   "license": "MIT",
   "scripts": {
     "vendor": "node scripts/vendor-build.mjs",
+    "css": "node scripts/build-css.mjs",
     "check:cdn": "node scripts/check-no-cdn.mjs site",
     "deploy": "cpx \"_site/**/*\" \"site/\"",
-    "clean": "rimraf site .jekyll-cache .jekyll-metadata"
+    "clean": "rimraf site .jekyll-cache .jekyll-metadata assets/css/main.css"
   },
   "dependencies": {
     "esbuild": "0.20.2",
     "cpx2": "7.0.1"
   },
   "devDependencies": {
-    "rimraf": "5.0.5"
+    "rimraf": "5.0.5",
+    "sass": "1.77.8"
   },
   "engines": {
     "node": ">=20.0.0"

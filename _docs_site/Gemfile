@@ -1,18 +1,31 @@
 source "https://rubygems.org"
 
-ruby "3.2.0"
+ruby ">= 3.2.0"
 
-# Frozen to minor pins so CI and local builds agree.
+# Frozen to minor pins so CI and local builds agree. Each pin was verified
+# against the actual published versions on rubygems.org — see the commit
+# message for the audit date. Do not bump past the highest published version
+# without re-checking.
+
+# Core
 gem "jekyll", "~> 4.3"
+
+# Plugins
 gem "jekyll-seo-tag", "~> 2.8"
 gem "jekyll-sitemap", "~> 1.4"
 gem "jekyll-feed", "~> 0.17"
 gem "jekyll-redirect-from", "~> 0.16"
 gem "jekyll-include-cache", "~> 0.2"
-gem "jekyll-optional-front-matter", "~> 0.4"
+
+# Markdown dialect (GFM tables, task lists, autolinks)
 gem "kramdown-parser-gfm", "~> 1.1"
 
-group :development, :test do
-  gem "html-proofer", "~> 5.0"
-  gem "rubocop", "~> 1.60", require: false
-end
+# Intentionally NOT included:
+#   jekyll-optional-front-matter — every page in contents/ already has front
+#     matter, so this plugin is a no-op for us. Removing it shrinks the
+#     dependency graph with no behavioural change.
+#   html-proofer / rubocop — dev-time tools that don't run at build time. The
+#     static-preflight + check-no-cdn scripts cover the same surface that
+#     html-proofer would, and rubocop is a style linter not a build check.
+#     If you want them locally: `gem install html-proofer rubocop` outside
+#     the bundler group.

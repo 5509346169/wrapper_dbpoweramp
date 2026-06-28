@@ -20,6 +20,10 @@ assets/vendor/*.js
 assets/vendor/*.css
 assets/vendor/*.map
 
+# Generated CSS — compiled from _sass/* + assets/css/main.scss by
+# `make css` (Dart Sass via scripts/build-css.mjs). Sources are committed.
+assets/css/main.css
+
 # OS / editor
 .DS_Store
 Thumbs.db
