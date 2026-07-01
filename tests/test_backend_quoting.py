@@ -265,17 +265,40 @@ class TestWineBackendQuoting:
             assert token != "AAC", f"orphan token leaked into cmd: {cmd!r}"
 
 
-class TestNativeBackendLongPathStaging:
-    """Long-path workaround: when enabled, CoreConverter must see short
-    paths; the long-path output is implicitly updated because on NTFS
-    the short path is the same physical file as the long path."""
+class TestNativeBackendTmpStaging:
+    """Tmp-staging long-path workaround: when enabled, CoreConverter must
+    see only short paths under tmp/audio/src and tmp/audio/dst; the
+    long-path output is materialised by ``unstage()`` moving the staged
+    file to the original long destination."""
 
-    def test_long_paths_off_passes_long_paths_through(self):
+    def test_tmp_staging_off_passes_short_paths_through(self):
         from src.backends.native_dbpoweramp import NativeDbpowerampBackend
 
-        backend = NativeDbpowerampBackend(_settings_native())
-        # A path short enough that staging won't kick in even if the flag
-        # were on. We assert that the cmd preserves the long path verbatim.
+        # Build a settings instance with tmp_staging=False.
+        from src.config.settings_loader import (
+            BackendConfig,
+            NativeDbpowerampConfig,
+        )
+
+        base = _settings_native()
+        settings = type(base)(
+            backend=BackendConfig(
+                default=base.backend.default,
+                auto_detect=base.backend.auto_detect,
+                wine_dbpoweramp=base.backend.wine_dbpoweramp,
+                native_dbpoweramp=NativeDbpowerampConfig(
+                    coreconverter_path=base.backend.native_dbpoweramp.coreconverter_path,
+                    tmp_staging=False,
+                ),
+                native_ffmpeg=base.backend.native_ffmpeg,
+            ),
+            tools=base.tools,
+            history=base.history,
+            execution=base.execution,
+            logging=base.logging,
+        )
+        backend = NativeDbpowerampBackend(settings)
+        # Short paths -- even with staging off, the path passes through.
         job = MagicMock()
         job.infile = Path("C:/Music/in.m4a")
         job.outfile = Path("C:/Music/out.m4a")
@@ -297,14 +320,14 @@ class TestNativeBackendLongPathStaging:
         assert result.status == "SUCCESS", result.error_msg
         assert '-infile="C:\\Music\\in.m4a"' in captured["cmd"]
 
-    def test_long_paths_on_with_short_resolution_stages(self):
+    def test_tmp_staging_on_stages_long_paths(self):
         from src.backends.native_dbpoweramp import NativeDbpowerampBackend
         from src.config.settings_loader import (
             BackendConfig,
             NativeDbpowerampConfig,
         )
 
-        # Build a settings instance with long_paths=True.
+        # Build a settings instance with tmp_staging=True (the default).
         base = _settings_native()
         settings = type(base)(
             backend=BackendConfig(
@@ -313,7 +336,7 @@ class TestNativeBackendLongPathStaging:
                 wine_dbpoweramp=base.backend.wine_dbpoweramp,
                 native_dbpoweramp=NativeDbpowerampConfig(
                     coreconverter_path=base.backend.native_dbpoweramp.coreconverter_path,
-                    long_paths=True,
+                    tmp_staging=True,
                 ),
                 native_ffmpeg=base.backend.native_ffmpeg,
             ),
@@ -325,11 +348,16 @@ class TestNativeBackendLongPathStaging:
 
         backend = NativeDbpowerampBackend(settings)
 
-        # Real long paths on disk so GetShortPathNameW resolves them.
+        # Real long paths on disk so shutil.copy2 has something to copy.
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmp:
             tmp_p = Path(tmp)
+            # Use the project tmp/ tree as the staging root so the helper
+            # doesn't have to mkdir arbitrary temp paths during the test.
+            stage_root = Path("tmp") / "audio"
+            stage_root.mkdir(parents=True, exist_ok=True)
+
             long_infile = tmp_p / ("a" * 200) / "in.m4a"
             long_outfile = tmp_p / ("a" * 200) / "out.m4a"
             long_infile.parent.mkdir(parents=True, exist_ok=True)
@@ -351,9 +379,7 @@ class TestNativeBackendLongPathStaging:
                 captured["short_outfile"] = m.group(1)
 
                 # Simulate CoreConverter writing the output to the short
-                # path. On NTFS, the short path is the same file as the
-                # long path (same inode), so the long-path file is also
-                # written.
+                # staged path.
                 Path(m.group(1)).parent.mkdir(parents=True, exist_ok=True)
                 Path(m.group(1)).write_bytes(b"converted-audio")
 
@@ -368,17 +394,27 @@ class TestNativeBackendLongPathStaging:
 
             assert result.status == "SUCCESS", result.error_msg
             cmd = captured["cmd"]
-            # The short path was passed to CoreConverter, NOT the long one.
+            # The short staged path was passed to CoreConverter, NOT the long one.
             assert str(long_infile) not in cmd, (
-                f"long path leaked into cmd despite long_paths=True: {cmd!r}"
+                f"long source path leaked into cmd despite tmp_staging=True: {cmd!r}"
             )
             assert str(long_outfile) not in cmd, (
                 f"long outfile leaked into cmd: {cmd!r}"
             )
-            # Because short and long paths share an inode on NTFS, the
-            # write to the short path is immediately visible at the long
-            # path — no explicit rename needed.
-            assert long_outfile.exists(), "long-path output not visible after CoreConverter exit"
+            # The cmd's -outfile points at a short path under tmp/audio/dst.
+            short_out = captured["short_outfile"]
+            assert "audio" in short_out and "dst" in short_out, (
+                f"expected staged output under tmp/audio/dst, got {short_out!r}"
+            )
+            assert "out.m4a" in short_out, (
+                f"staged basename should preserve original outfile name, got {short_out!r}"
+            )
+            # The unstage() step moved the short staged output to the long
+            # destination.
+            assert long_outfile.exists(), (
+                "long-path output not materialised after unstage()"
+            )
             assert long_outfile.read_bytes() == b"converted-audio", (
                 "long-path output content does not match what CoreConverter wrote"
             )
+

@@ -117,33 +117,46 @@ backend:
     coreconverter_path: "C:\\Program Files\\dBpoweramp\\CoreConverter.exe"
 ```
 
-##### `long_paths`
+##### `tmp_staging`
 
 | Property | Value |
 |----------|-------|
 | Type | Boolean |
-| Default | `false` |
+| Default | `true` |
 
-Enable the Windows long-path workaround. When `true`, the wrapper resolves
-`infile` and `outfile` to their 8.3 short names before invoking
-CoreConverter on paths whose absolute form exceeds ~240 chars (the safety
-threshold below Windows' MAX_PATH=260 + CreateProcessW quoting headroom).
+Enable the Windows long-path workaround via tmp staging. When `true`,
+the wrapper copies each conversion's source to a short path under
+`./tmp/audio/src/` and tells CoreConverter to write its output to a short
+path under `./tmp/audio/dst/`, then `shutil.copy2()`s the converted file
+from the staged output to the original long destination on success, and
+unlinks both staged artefacts. This is a literal three-step copy chain
+(`copy -> convert -> copy`) so neither the encoder nor the wrapper ever
+sees a path that exceeds MAX_PATH, and a partially-written staged
+output stays recoverable in `tmp/audio/dst/` if the destination volume
+fills up mid-copy. This avoids every `CreateFileW`
+MAX_PATH-sensitive call inside CoreConverter and its child encoders
+(e.g. `qaac.exe`) regardless of whether 8.3 name generation is enabled
+on the volume.
 
-Without this, CoreConverter cannot open the file (its `CreateFileW` calls
-don't use the `\\?\` long-path prefix) and the conversion fails with
-`Conversion Failed. Error writing audio data to StdIn Pipe` and a 0-byte
-output file. Common on libraries with deeply nested artist/album folders
-(especially JP/en libraries with kanji names).
+Without this, CoreConverter cannot open the file (its `CreateFileW`
+calls don't use the `\\?\` long-path prefix) and the conversion fails
+with `Conversion Failed. Error writing audio data to StdIn Pipe` and a
+0-byte output file. Common on libraries with deeply nested artist/album
+folders (especially JP/en libraries with kanji names).
 
-The runtime CLI flag `--long-paths` / `--no-long-paths` overrides this
-setting. On non-Windows platforms or when 8.3 names are disabled on the
-volume (`fsutil 8dot3name set`), the helper degrades to a no-op and the
-original long path is passed through unchanged.
+Staging is opt-in per-path: it only kicks in when the source or
+destination exceeds ~240 chars, so short paths pay no I/O cost. The
+per-job I/O cost is one full source copy — negligible compared to the
+encoding cost (which is CPU-bound, not I/O-bound).
+
+The runtime CLI flag `--tmp-staging` / `--no-tmp-staging` overrides this
+setting. On non-Windows platforms the helper is a no-op and the original
+paths are passed through unchanged.
 
 ```yaml
 backend:
   native_dbpoweramp:
-    long_paths: true
+    tmp_staging: true
 ```
 
 #### `backend.wine_dbpoweramp`

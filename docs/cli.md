@@ -308,6 +308,34 @@ Under the hood the prefilter bulk-queries `ConversionDB.failed_job_pairs()` for 
 python main.py -I ~/Music -O ~/Converted -p flac-lossless --failed-only
 ```
 
+---
+
+### `--tmp-staging` / `--no-tmp-staging`
+
+**Type:** Flag (mutually exclusive pair)  
+**Required:** No  
+**Default:** Inherited from `backend.native_dbpoweramp.tmp_staging` in `settings.yaml` (defaults to `true`)
+
+Enable the long-path workaround for the native Windows dBpoweramp backend. When on, each conversion is staged through a short path under `./tmp/audio/`. The flow is a literal three-step copy chain:
+
+1. `stage_paths()` does `shutil.copy2(long_source, ./tmp/audio/src/<hash>__<basename>)`.
+2. CoreConverter runs and writes `tmp/audio/src/<hash>__<basename>` to `tmp/audio/dst/<hash>__<basename>`.
+3. `unstage()` does `shutil.copy2(tmp/audio/dst/<hash>__<basename>, long_destination)`, then unlinks both the staged output and the staged source.
+
+This avoids every `CreateFileW` MAX_PATH-sensitive call inside CoreConverter and its child encoders (e.g. `qaac.exe`) regardless of whether 8.3 name generation is enabled on the volume. Staging only kicks in for paths over ~240 chars, so short paths pay no I/O cost. Off by default on non-Windows platforms (no-op).
+
+> Note: the final step uses `copy2`, not `move`, so the staged output stays on disk during the copy — if the destination volume fills up mid-write, the staged file is still recoverable in `tmp/audio/dst/` for inspection.
+
+Use `--no-tmp-staging` to override `settings.yaml` and pass long paths straight to CoreConverter (not recommended for deeply nested JP/en libraries).
+
+```sh
+# Default behaviour (inherits true from settings.yaml).
+python main.py -I ~/Music -O ~/Converted -p qaac-cvbr-256 --tmp-staging
+
+# Force off.
+python main.py -I ~/Music -O ~/Converted -p qaac-cvbr-256 --no-tmp-staging
+```
+
 Pair with `--db` if your history lives somewhere other than the default location.
 
 ---
@@ -528,6 +556,7 @@ python main.py --db /path/to/history.db db doctor
 | `--db` | No | History database path |
 | `--force` | No | Ignore resume history |
 | `--failed-only` | No | Convert only files whose latest history row is `FAILED` (overwrites output) |
+| `--tmp-staging` / `--no-tmp-staging` | No | Enable/disable long-path workaround via `./tmp/audio/` staging (native Windows backend only) |
 | `--dry-run` | No | List jobs without converting |
 | `--list-lossy` | No | Print lossy files and exit |
 | `--build-index` | No | Build index to file |

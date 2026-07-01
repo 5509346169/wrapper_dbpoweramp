@@ -29,7 +29,17 @@ class NativeDbpowerampConfig:
     """Native dBpoweramp backend: path to CoreConverter.exe on Windows."""
 
     coreconverter_path: str
-    long_paths: bool = False
+    # Long-path workaround: when True, the wrapper stages each conversion
+    # through a short path under ``./tmp/audio/`` so CoreConverter and its
+    # child encoders never see a path that exceeds Windows MAX_PATH (260).
+    # Required when any of your source/destination paths are deeply nested
+    # (e.g. JP album folders with kanji + Roman artist/album names
+    # routinely exceed MAX_PATH). Without this CoreConverter cannot open
+    # the file and the conversion fails with "Error writing audio data to
+    # StdIn Pipe" plus a 0-byte output. Auto-applies only to paths over
+    # ~240 chars; short paths pay no I/O cost. Override at runtime with
+    # --tmp-staging / --no-tmp-staging.
+    tmp_staging: bool = True
 
 
 @dataclass

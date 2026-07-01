@@ -28,7 +28,7 @@ class AppContext:
     worker_model: "WorkerModel"
     execution_mode: "ExecutionMode"
     verbose: bool
-    long_paths: bool = False
+    tmp_staging: bool = True
     # When True, the prefilter restricts pending jobs to those whose latest
     # history row is FAILED, and ``run_job`` re-encodes them instead of
     # short-circuiting via ``last_failure()``. Default False.
@@ -103,14 +103,17 @@ def build_context(args: "Namespace") -> AppContext:
     )
     verbose = args.verbose
 
-    # Long-path workaround: CLI flag overrides settings.yaml. Only meaningful
-    # for the native dBpoweramp backend; we still pass the value through to
-    # the context so the backend can read it from a single source of truth.
-    cli_long_paths = getattr(args, "long_paths", None)
-    long_paths = (
-        cli_long_paths
-        if cli_long_paths is not None
-        else settings.backend.native_dbpoweramp.long_paths
+    # Long-path workaround via tmp staging: CLI flag overrides settings.yaml.
+    # Only meaningful for the native dBpoweramp backend; we still pass the
+    # value through to the context so the backend can read it from a single
+    # source of truth. Default-on (settings.yaml ships ``tmp_staging: true``)
+    # so users with deeply nested JP/en libraries don't need to discover
+    # the setting.
+    cli_tmp_staging = getattr(args, "tmp_staging", None)
+    tmp_staging = (
+        cli_tmp_staging
+        if cli_tmp_staging is not None
+        else settings.backend.native_dbpoweramp.tmp_staging
     )
 
     # --failed-only is a CLI-only flag (no settings.yaml default — it is a
@@ -130,6 +133,6 @@ def build_context(args: "Namespace") -> AppContext:
         worker_model=worker_model,
         execution_mode=execution_mode,
         verbose=verbose,
-        long_paths=long_paths,
+        tmp_staging=tmp_staging,
         failed_only=failed_only,
     )

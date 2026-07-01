@@ -75,19 +75,22 @@ class NativeDbpowerampBackend(ConversionBackend):
         # Long-path workaround: on Windows, CoreConverter and its child
         # encoders (qaac.exe, lame.exe, etc.) call CreateFileW without the
         # ``\\?\`` prefix, so they fail to open any source/destination path
-        # whose absolute form exceeds MAX_PATH (260 chars). When the
-        # user opts in via ``long_paths: true`` (settings.yaml) or
-        # ``--long-paths`` (CLI), we resolve both paths to their 8.3 short
-        # names, run CoreConverter against the short paths, and rename the
-        # result back to the original long destination on success.
-        # See ``src.pathing.long_path`` for the gory details.
+        # whose absolute form exceeds MAX_PATH (260 chars). When the user
+        # opts in via ``tmp_staging: true`` (settings.yaml) or
+        # ``--tmp-staging`` (CLI), we copy the source to a short path under
+        # ``tmp/audio/src/<hash>__<basename>``, point CoreConverter at
+        # ``tmp/audio/dst/<hash>__<basename>`` for the output, then move the
+        # converted file to the original long destination on success. This
+        # avoids every MAX_PATH-sensitive Win32 call in the encode pipeline
+        # regardless of whether 8.3 name generation is enabled on the
+        # volume. See ``src.pathing.long_path`` for details.
         staged = stage_paths(
             infile=job.infile,
             outfile=job.outfile,
-            enabled=self._cfg.long_paths,
+            enabled=self._cfg.tmp_staging,
         )
-        infile_for_cmd = staged.infile
-        outfile_for_cmd = staged.outfile
+        infile_for_cmd = staged.staged_infile
+        outfile_for_cmd = staged.staged_outfile
 
         # CoreConverter uses its own argument parser rather than the standard
         # Windows CommandLineToArgvW rules. It splits the raw command line on
@@ -154,22 +157,25 @@ class NativeDbpowerampBackend(ConversionBackend):
         stdout_text = "".join(stdout_lines)
 
         if exit_code == 0 and staged.staged:
-            # On NTFS, the short path is just an alias for the same physical
-            # file as the long path — CoreConverter's write is already visible
-            # at the long destination. ``unstage()`` only checks that the
-            # long-path output now exists and is non-empty. If not, it means
-            # CoreConverter exited 0 but didn't actually write anything
-            # (extremely rare; usually a permissions issue or read-only
-            # output volume).
+            # Tmp-staging mode: CoreConverter wrote its output to the short
+            # ``tmp/audio/dst/<hash>__<basename>`` path. ``unstage()`` performs
+            # a literal ``shutil.copy2()`` of that file to the original long
+            # destination and then unlinks both the staged output and the
+            # staged source. If unstage returns False the conversion
+            # succeeded but the copy failed (extremely rare; usually a
+            # permissions issue, a read-only destination volume, or the
+            # destination's parent directory was deleted between scan and
+            # convert).
             if not unstage(staged):
                 return JobResult(
                     job=job,
                     status="FAILED",
                     error_msg=(
                         f"CoreConverter exited 0 but the expected output at "
-                        f"{staged.long_outfile} is missing or empty. "
-                        "Check that the destination's parent directory is "
-                        "writable and not full."
+                        f"{staged.long_outfile} is missing or empty after the "
+                        "tmp-stage move. Check that the destination's parent "
+                        "directory is writable and not full, and that "
+                        "tmp/audio/ has enough free space."
                     ),
                     stdout=stdout_text,
                 )

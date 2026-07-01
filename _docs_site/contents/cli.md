@@ -441,6 +441,24 @@ Convert only files whose most recent history row is `FAILED`. Previously-success
 
 The prefilter bulk-queries `ConversionDB.failed_job_pairs()` for `(source, dest, job_type)` triples with `status='FAILED'` (only `convert` and `copy` job types are considered; `skip` rows are never actionable). Files matching a triple go pending; everything else goes straight to skipped.
 
+### `--tmp-staging` / `--no-tmp-staging`
+
+| Property | Value |
+|----------|-------|
+| Type | Flag (mutually exclusive pair) |
+| Required | No |
+| Default | Inherited from `backend.native_dbpoweramp.tmp_staging` in `settings.yaml` (defaults to `true`) |
+
+Enable the long-path workaround for the native Windows dBpoweramp backend. When on, each conversion is staged through a short path under `./tmp/audio/`. The flow is a literal three-step copy chain:
+
+1. `stage_paths()` does `shutil.copy2(long_source, ./tmp/audio/src/<hash>__<basename>)`.
+2. CoreConverter runs and writes `tmp/audio/src/<hash>__<basename>` to `tmp/audio/dst/<hash>__<basename>`.
+3. `unstage()` does `shutil.copy2(tmp/audio/dst/<hash>__<basename>, long_destination)`, then unlinks both the staged output and the staged source.
+
+This avoids every `CreateFileW` MAX_PATH-sensitive call inside CoreConverter and its child encoders (e.g. `qaac.exe`) regardless of whether 8.3 name generation is enabled on the volume. Staging only kicks in for paths over ~240 chars, so short paths pay no I/O cost. Off by default on non-Windows platforms (no-op).
+
+> Note: the final step uses `copy2`, not `move`, so the staged output stays on disk during the copy — if the destination volume fills up mid-write, the staged file is still recoverable in `tmp/audio/dst/` for inspection.
+
 ## Quick reference
 
 | Flag | Required | Description |
@@ -462,6 +480,7 @@ The prefilter bulk-queries `ConversionDB.failed_job_pairs()` for `(source, dest,
 | `--db` | No | History database path |
 | `--force` | No | Ignore resume history |
 | `--failed-only` | No | Convert only files whose latest history row is `FAILED` (overwrites output) |
+| `--tmp-staging` / `--no-tmp-staging` | No | Enable/disable long-path workaround via `./tmp/audio/` staging (native Windows backend only) |
 | `--dry-run` | No | List jobs without converting |
 | `--list-lossy` | No | Print lossy files and exit |
 | `--build-index` | No | Build index to file |

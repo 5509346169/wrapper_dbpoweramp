@@ -15,7 +15,7 @@ def run(ctx: "AppContext") -> int:
     """Run the full pipeline: scan → enrich → prefilter → execute."""
     from src.app.context import MutablePhaseState
     from src.app.lifecycle.signals import install_signal_guard
-    from src.app.lifecycle.tempdir import cleanup_index, setup_temp_dir
+    from src.app.lifecycle.tempdir import cleanup_index, cleanup_staging_workspace, setup_temp_dir
     from src.app.lifecycle.scan_cache import close_scan_cache
     from src.app.pipeline.enrich import enrich
     from src.app.pipeline.execute import execute_phases
@@ -28,6 +28,12 @@ def run(ctx: "AppContext") -> int:
 
     tmp_dir, index_db_path = setup_temp_dir()
     phase_state = MutablePhaseState()
+
+    # Clear any leftover tmp/audio/ files from a previous interrupted or
+    # crashed run. Per-job unstage() takes care of successful jobs; this
+    # catches everything else (failed jobs, Ctrl+C, power loss) so the
+    # staging tree doesn't accumulate indefinitely.
+    cleanup_staging_workspace()
 
     summary: dict[str, int] = {"success": 0, "skipped": 0, "failed": 0}
     exc_info: str | None = None

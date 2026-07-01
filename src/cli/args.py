@@ -227,37 +227,40 @@ def _add_execution_args(parser: "ArgumentParser") -> None:
         dest="db_version",
         help="Print history DB schema version and exit.",
     )
-    # Long-path handling is intentionally separate from --execution-mode-style
-    # flags because it only affects the native dBpoweramp backend (Wine paths
-    # are translated via winepath, and ffmpeg uses argv-style child processes
-    # that don't go through CreateProcessW with long-path-naive Win32 APIs).
-    # Grouping it under execution_args would imply it applies to every backend,
-    # which would be misleading.
-    long_paths_group = parser.add_mutually_exclusive_group()
-    long_paths_group.add_argument(
-        "--long-paths",
+    # Tmp-staging for long paths: only affects the native dBpoweramp
+    # backend. When the user opts in (default: on), each conversion is
+    # staged through a short path under ./tmp/audio/ so CoreConverter and
+    # its child encoders never see a path that exceeds Windows MAX_PATH
+    # (260). Grouping it under execution_args would imply it applies to
+    # every backend, which would be misleading — Wine paths are
+    # translated via winepath, and ffmpeg uses argv-style child processes
+    # that don't go through CreateProcessW with long-path-naive Win32 APIs.
+    tmp_staging_group = parser.add_mutually_exclusive_group()
+    tmp_staging_group.add_argument(
+        "--tmp-staging",
         action="store_true",
-        dest="long_paths",
+        dest="tmp_staging",
         default=None,
         help=(
-            "Enable Windows long-path workaround: resolve infile/outfile to "
-            "their 8.3 short names before invoking CoreConverter. Required "
-            "when your source or destination path exceeds ~240 chars "
+            "Enable long-path workaround via tmp staging: copy the source "
+            "to ./tmp/audio/src/<hash>__<basename>, point CoreConverter at "
+            "the matching short path under ./tmp/audio/dst/, and move the "
+            "output back to the long destination on success. Required when "
+            "your source or destination path exceeds ~240 chars "
             "(MAX_PATH=260 + -outfile=\"...\" quoting headroom) — otherwise "
             "CoreConverter cannot open the file and fails with 'Error "
-            "writing audio data to StdIn Pipe'. On NTFS the short path is "
-            "the same physical file as the long path, so the encoder's "
-            "output is already visible at the long destination after "
-            "CoreConverter exits. Default: off (set in settings.yaml via "
-            "backend.native_dbpoweramp.long_paths)."
+            "writing audio data to StdIn Pipe' plus a 0-byte output. "
+            "Auto-applies only to paths over the safety threshold, so "
+            "short paths pay no I/O cost. Default: on (set in settings.yaml "
+            "via backend.native_dbpoweramp.tmp_staging)."
         ),
     )
-    long_paths_group.add_argument(
-        "--no-long-paths",
+    tmp_staging_group.add_argument(
+        "--no-tmp-staging",
         action="store_false",
-        dest="long_paths",
+        dest="tmp_staging",
         default=None,
-        help="Disable long-path workaround (overrides settings.yaml).",
+        help="Disable tmp staging (overrides settings.yaml).",
     )
 
 
