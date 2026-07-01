@@ -49,3 +49,8 @@ class NullProgressSink:
     def log_verify_result(self, infile: str, status: str, reason: str | None,
                          fmt: str | None, duration_s: float | None) -> None:
         pass
+
+    def log_convert_result(self, infile: str, outfile: str, encoder: str,
+                          output_bytes: int | None, elapsed_s: float,
+                          status: str, error_msg: str | None = None) -> None:
+        pass

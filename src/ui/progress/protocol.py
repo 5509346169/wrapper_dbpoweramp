@@ -104,3 +104,9 @@ class ProgressSink(Protocol):
                          fmt: str | None, duration_s: float | None) -> None:
         """Log a post-write verify result: 'Okay' or 'Not - <reason>'."""
         ...
+
+    def log_convert_result(self, infile: str, outfile: str, encoder: str,
+                          output_bytes: int | None, elapsed_s: float,
+                          status: str, error_msg: str | None = None) -> None:
+        """Log a conversion result with size and elapsed time."""
+        ...

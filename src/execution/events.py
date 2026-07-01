@@ -16,7 +16,8 @@ class JobEventKind(str, Enum):
     FINISHED = "finished"
     LOG = "log"
     ACTIVITY = "activity"
-    VERIFY_RESULT = "verify_result"  # NEW: payload is (infile, status, reason, fmt, dur_s)
+    VERIFY_RESULT = "verify_result"  # payload is (infile, status, reason, fmt, dur_s)
+    CONVERT_RESULT = "convert_result"  # payload is (infile, outfile, encoder, output_bytes, elapsed_s, status)
 
 
 def _make_event_queue(worker_model: str) -> Queue:
@@ -37,3 +38,14 @@ def _push_log_event(events: Queue, line: str) -> None:
 def _build_stream_callback(events: Queue) -> Optional[Callable[[str], None]]:
     """Build a stream_callback that forwards verbose lines to the main thread."""
     return partial(_push_log_event, events)
+
+
+def _direct_print_callback(line: str) -> None:
+    """Module-level picklable callback for verbose --print-to-terminal mode.
+
+    Defined at module scope (rather than nested inside ``run_all``) so it
+    can be pickled into ``ProcessPoolExecutor`` workers — local functions
+    defined inside other functions are not picklable on Windows spawn-based
+    multiprocessing, which is the default.
+    """
+    print(line)

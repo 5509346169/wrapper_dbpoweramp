@@ -1,17 +1,14 @@
-"""app/pipeline/execute.py: Execute phase — Rich/Verbose sink + run_all + futures draining."""
+"""app/pipeline/execute.py: Execute phase — Rich/Verbose sink + run_all."""
 
 from __future__ import annotations
 
-from concurrent.futures import as_completed
 from typing import TYPE_CHECKING
 
-from src.execution.runner import _drain_events_into_ui
 from src.execution.run_all import run_all
 from src.history.db import DBWriteQueue
 from src.ui.progress_view import (
     NullProgressSink,
     RichProgressSink,
-    SubtaskID,
 )
 
 if TYPE_CHECKING:
@@ -116,24 +113,9 @@ def execute_phases(
                 progress=sink,
                 print_to_terminal=ctx.verbose,
             )
-            if ctx.workers > 1:
-                job_tasks: dict[str, SubtaskID] = {}
-                remaining = list(futures)
-                while remaining:
-                    _drain_events_into_ui(events, sink, job_tasks)
-                    for future in list(as_completed(remaining)):
-                        remaining.remove(future)
-                        status, infile_name, error_msg = future.result()
-                        if status == "SUCCESS":
-                            conv_summary["success"] += 1
-                        elif status == "SKIPPED":
-                            conv_summary["skipped"] += 1
-                        else:
-                            conv_summary["failed"] += 1
             for k in phase_summary:
                 phase_summary[k] += conv_summary.get(k, 0)
             sink.stop_phase()
-        progress_active = True
         summary = phase_summary
 
     if owns_sink and not ctx.verbose:

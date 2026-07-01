@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import shutil
+import time as _time
 from pathlib import Path
 from queue import Queue
 from typing import Callable, Optional
 
 from src.audio.integrity import VerifyStatus, verify_file
-from src.backends.base import ConversionBackend
+from src.backends.base import Backend, ConversionBackend
 from src.history.db import ConversionDB, DBWriteQueue
 from src.models.types import ConversionJob, JobResult, JobStatus
 from src.sidecars.manager import copy_covers, copy_lyrics
@@ -93,33 +94,71 @@ def run_job(
 
         elif job.job_type == "copy":
             try:
+                copy_start = _time.monotonic()
                 job.outfile.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(job.infile, job.outfile)
+                copy_elapsed = _time.monotonic() - copy_start
             except (shutil.Error, OSError) as e:
                 print(f"[runner] copy failed for {job.infile} -> {job.outfile}: {e}")
                 status = "FAILED"
                 error_msg = str(e)
+                copy_size: int | None = job.outfile.stat().st_size if job.outfile.exists() else None
+                db.log_conversion(
+                    source=str(job.infile),
+                    dest=str(job.outfile),
+                    job_type=job.job_type,
+                    command=None,
+                    status="FAILED",
+                    error_msg=error_msg,
+                    stdout=None,
+                    file_size=copy_size,
+                    verify_status=None,
+                    verify_reason=None,
+                    verify_format=None,
+                    verify_duration_s=None,
+                )
                 if events is not None:
                     events.put((JobEventKind.VERIFY_RESULT, (infile_name, "UNSUPPORTED", None, None, None)))
+                    events.put((JobEventKind.CONVERT_RESULT,
+                                (str(job.infile), str(job.outfile), "copy",
+                                 copy_size, 0.0, "FAILED", error_msg)))
             else:
                 # Verify output file before marking as success
                 is_valid, verify_error, verify_status, verify_reason, verify_duration_s = _verify_output_file(job)
+                copy_size = job.outfile.stat().st_size
                 if events is not None:
-                    events.put((JobEventKind.VERIFY_RESULT, (infile_name, verify_status, verify_reason, None, verify_duration_s)))
+                    events.put((JobEventKind.VERIFY_RESULT,
+                                (infile_name, verify_status, verify_reason, None, verify_duration_s)))
+                    events.put((JobEventKind.CONVERT_RESULT,
+                                (str(job.infile), str(job.outfile), "copy",
+                                 copy_size, copy_elapsed, "SUCCESS", None)))
                 if not is_valid:
                     status = "FAILED"
                     error_msg = verify_error
+                    db.log_conversion(
+                        source=str(job.infile),
+                        dest=str(job.outfile),
+                        job_type=job.job_type,
+                        command=None,
+                        status="FAILED",
+                        error_msg=verify_error,
+                        stdout=None,
+                        file_size=copy_size,
+                        verify_status=verify_status,
+                        verify_reason=verify_reason,
+                        verify_format=None,
+                        verify_duration_s=verify_duration_s,
+                    )
                 else:
                     copy_lyrics(job.infile, job.outfile, job.preset.lyrics)
                     copy_covers(job.infile, job.outfile, job.preset.covers)
-                    file_size = job.outfile.stat().st_size
                     db.log_conversion(
                         source=str(job.infile),
                         dest=str(job.outfile),
                         job_type=job.job_type,
                         command=None,
                         status="SUCCESS",
-                        file_size=file_size,
+                        file_size=copy_size,
                         verify_status=verify_status,
                         verify_reason=verify_reason,
                         verify_format=None,
@@ -151,6 +190,7 @@ def run_job(
 
             job.outfile.parent.mkdir(parents=True, exist_ok=True)
 
+            convert_start = _time.monotonic()
             if prior_failure:
                 # Skip the subprocess call; reuse the prior failure metadata so
                 # the user can see *why* the previous run failed without paying
@@ -164,6 +204,18 @@ def run_job(
                 )
             else:
                 result = backend.run(job, stream_callback)
+            convert_elapsed = _time.monotonic() - convert_start
+
+            # Emit CONVERT_RESULT immediately so the user sees conversion time
+            # before the (longer) post-write verification finishes.
+            output_size = job.outfile.stat().st_size if job.outfile.exists() else None
+            encoder_name = _get_encoder_name(job)
+            if events is not None:
+                events.put((
+                    JobEventKind.CONVERT_RESULT,
+                    (str(job.infile), str(job.outfile), encoder_name,
+                     output_size, convert_elapsed, result.status, result.error_msg),
+                ))
 
             if result.status == "SUCCESS":
                 # Verify output file before marking as success
@@ -254,3 +306,17 @@ def run_job(
             events.put((JobEventKind.FINISHED, infile_name))
 
     return status, infile_name, error_msg
+
+
+def _get_encoder_name(job: ConversionJob) -> str:
+    """Derive a short encoder label from the job's preset and backend args.
+
+    For dBpoweramp this is the ``-convert_to`` encoder string (e.g. ``ALAC``,
+    ``qaac CVBR 256kbps``). For other backends it falls back to the preset
+    extension (e.g. ``flac``). Used only for verbose/log output.
+    """
+    # Prefer the encoder from the active backend; fall back to the output ext.
+    for be_key, be_args in job.preset.backends.items():
+        if be_args.encoder:
+            return be_args.encoder
+    return job.preset.ext

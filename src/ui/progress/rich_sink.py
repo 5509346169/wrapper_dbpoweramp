@@ -261,6 +261,34 @@ class RichProgressSink:
         else:
             self.log(f"[verify] Not - {reason or 'unknown reason'}")
 
+    def log_convert_result(self, infile: str, outfile: str, encoder: str,
+                          output_bytes: int | None, elapsed_s: float,
+                          status: str, error_msg: str | None = None) -> None:
+        """Log a conversion result with size and elapsed time to the log area."""
+        import os as _os
+
+        elapsed_str = f"{elapsed_s:.2f}s"
+        if status == "SUCCESS":
+            if output_bytes is not None:
+                if output_bytes >= 1 << 30:
+                    size_str = f"{output_bytes / (1 << 30):.1f} GiB"
+                elif output_bytes >= 1 << 20:
+                    size_str = f"{output_bytes / (1 << 20):.1f} MiB"
+                elif output_bytes >= 1 << 10:
+                    size_str = f"{output_bytes / (1 << 10):.1f} KiB"
+                else:
+                    size_str = f"{output_bytes} B"
+            else:
+                size_str = "?"
+            self.log(
+                f"[convert] SUCCESS  {elapsed_str}  {size_str:>9}  {encoder}  {outfile}"
+            )
+        else:
+            reason = f"  ({error_msg})" if error_msg else ""
+            self.log(
+                f"[convert] FAILED   {elapsed_str}         -  {encoder}  {outfile}{reason}"
+            )
+
     def set_phase_label(self, label: str) -> None:
         """Update the master bar's phase label without restarting the phase."""
         if self._renderer is None or label == self._last_phase_label:

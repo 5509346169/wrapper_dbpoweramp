@@ -22,7 +22,11 @@ from src.execution.event_drain import (
     _drain_events_into_ui,
     _run_event_drain_thread,
 )
-from src.execution.events import _build_stream_callback, _make_event_queue
+from src.execution.events import (
+    _build_stream_callback,
+    _direct_print_callback,
+    _make_event_queue,
+)
 from src.execution.run_job import run_job
 
 
@@ -71,10 +75,12 @@ def run_all(
     events = _make_event_queue(worker_model)
 
     if print_to_terminal:
-        # When printing to terminal, use a direct stdout callback for verbose output
-        def _direct_print_callback(line: str) -> None:
-            print(line)
-        stream_cb: Optional[Callable[[str], None]] = _direct_print_callback if verbose else None
+        # Module-level so the callback is picklable into ProcessPoolExecutor
+        # workers on Windows (spawn-based multiprocessing cannot pickle a
+        # nested function).
+        stream_cb: Optional[Callable[[str], None]] = (
+            _direct_print_callback if verbose else None
+        )
     else:
         stream_cb = _build_stream_callback(events) if verbose else None
 
@@ -107,18 +113,21 @@ def run_all(
                 for job in jobs
             ]
 
-            if workers == 1:
-                for future in as_completed(futures):
-                    _drain_events_into_ui(events, progress, job_tasks)
-                    status, infile_name, error_msg = future.result()
+            # Iterate all futures regardless of worker count. Previously this
+            # loop was guarded by ``workers == 1`` which silently left the
+            # summary at {0, 0, 0} whenever a parallel pool was in use —
+            # a regression that masked failures in verbose mode.
+            for future in as_completed(futures):
+                _drain_events_into_ui(events, progress, job_tasks)
+                status, infile_name, error_msg = future.result()
 
-                    if status == "SUCCESS":
-                        summary["success"] += 1
-                    elif status == "SKIPPED":
-                        summary["skipped"] += 1
-                    else:
-                        summary["failed"] += 1
-                    # Note: advance() is already called by drain when FINISHED event is processed
+                if status == "SUCCESS":
+                    summary["success"] += 1
+                elif status == "SKIPPED":
+                    summary["skipped"] += 1
+                else:
+                    summary["failed"] += 1
+                # Note: advance() is already called by drain when FINISHED event is processed
     finally:
         # Stop the drain thread
         stop_drain.set()

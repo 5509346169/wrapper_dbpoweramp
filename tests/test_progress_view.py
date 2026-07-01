@@ -71,6 +71,25 @@ class RecordingProgressSink:
             {},
         )
 
+    def log_convert_result(
+        self,
+        infile: str,
+        outfile: str,
+        encoder: str,
+        output_bytes: int | None,
+        elapsed_s: float,
+        status: str,
+        error_msg: str | None = None,
+    ) -> None:
+        self._record(
+            "log_convert_result",
+            (infile, outfile, encoder, output_bytes, elapsed_s, status, error_msg),
+            {},
+        )
+
+    def set_counters(self, demoted: int = 0, kept: int = 0) -> None:
+        self._record("set_counters", (demoted, kept), {})
+
 
 # ---------------------------------------------------------------------------
 # Scan tests
@@ -215,6 +234,72 @@ def test_subtask_id_roundtrip_preserves_identity() -> None:
     assert sink.calls[0][1] == ("my-job.mp3", subtask_id)
     assert sink.calls[1][1] == (subtask_id,)
     assert sink.calls[1][1][0] is subtask_id
+
+
+# ---------------------------------------------------------------------------
+# Process-pool picklability regression tests
+# ---------------------------------------------------------------------------
+
+
+def test_direct_print_callback_is_picklable() -> None:
+    """The verbose-mode stream callback must be picklable for ProcessPoolExecutor.
+
+    Regression: ``_direct_print_callback`` was previously a local function
+    nested inside ``run_all``. Local functions are not picklable on
+    Windows spawn-based multiprocessing, which is the default, and the
+    worker submission would fail with::
+
+        _pickle.PicklingError: Can't pickle local object
+        <function run_all.<locals>._direct_print_callback ...>
+    """
+    import pickle
+
+    from src.execution.events import _direct_print_callback
+
+    # Module-level function — pickle must succeed.
+    pickled = pickle.dumps(_direct_print_callback)
+    restored = pickle.loads(pickled)
+    assert restored is _direct_print_callback
+
+
+def test_run_all_verbose_process_workers_does_not_pickle_error(
+    stub_db: Any,
+    stub_preset: PresetConfig,
+    tmp_path: Path,
+) -> None:
+    """``run_all`` with verbose=True + process workers must succeed end-to-end.
+
+    Regression: ``--verbose --worker-model process`` previously crashed with
+    a ``PicklingError`` on the very first job because the verbose stream
+    callback was a local function inside ``run_all``.
+    """
+    src = tmp_path / "a.flac"
+    src.touch()
+    job = ConversionJob(
+        infile=src,
+        outfile=tmp_path / "a_out.flac",
+        preset=stub_preset,
+        job_type="convert",
+    )
+
+    backend = _StubBackend([])
+    sink = RecordingProgressSink()
+
+    summary, _futures, _events, write_queue = run_all(
+        jobs=[job],
+        backend=backend,
+        db_path=str(stub_db.db_path),
+        force=True,
+        workers=2,
+        worker_model="process",
+        verbose=True,
+        print_to_terminal=True,
+        progress=sink,
+    )
+
+    write_queue.flush()
+    # Total counts must equal jobs submitted.
+    assert summary["success"] + summary["failed"] + summary["skipped"] == 1
 
 
 # ---------------------------------------------------------------------------
@@ -408,6 +493,107 @@ def test_run_all_parallel_worker_produces_events(
     methods = [c[0] for c in sink.calls]
     assert "start_subtask" in methods
     assert "finish_subtask" in methods
+
+
+def test_run_all_parallel_worker_counts_results(
+    stub_db: Any,
+    stub_preset: PresetConfig,
+    tmp_path: Path,
+) -> None:
+    """Regression: run_all must count SUCCESS/FAILED regardless of worker count.
+
+    Previously, ``run_all`` only iterated ``as_completed`` futures when
+    ``workers == 1``, which silently left the summary at ``{0, 0, 0}``
+    for parallel runs — masking failures in verbose mode.
+    """
+    jobs = []
+    for i in range(4):
+        src = tmp_path / f"a{i}.flac"
+        src.touch()
+        jobs.append(
+            ConversionJob(
+                infile=src,
+                outfile=tmp_path / f"a{i}_out.flac",
+                preset=stub_preset,
+                job_type="convert",
+            )
+        )
+
+    backend = _StubBackend([])
+    sink = RecordingProgressSink()
+
+    summary, _futures, _events, write_queue = run_all(
+        jobs=jobs,
+        backend=backend,
+        db_path=str(stub_db.db_path),
+        force=True,  # bypass resume checks — they may have been recorded by an earlier test
+        workers=4,
+        worker_model="thread",
+        verbose=False,
+        progress=sink,
+    )
+
+    write_queue.flush()
+    # All four jobs ran (force=True bypasses resume). With workers=4 the
+    # summary must NOT be silently zero — that was the original bug. The
+    # outcome (success vs failed) depends on the verifier's behaviour on
+    # the stub file, which is irrelevant to this test.
+    assert summary["success"] + summary["failed"] + summary["skipped"] == 4, (
+        f"run_all dropped results: summary={summary}, expected total 4"
+    )
+
+
+def test_run_all_parallel_emits_convert_result_to_sink(
+    stub_db: Any,
+    stub_preset: PresetConfig,
+    tmp_path: Path,
+) -> None:
+    """Verbose mode: each completed job produces a ``log_convert_result`` call.
+
+    Regression: with workers > 1 the drain thread must still forward
+    ``CONVERT_RESULT`` events to the sink so the user sees per-file
+    convert lines like ``convert SUCCESS 12.34s 47.2 MiB ALAC …``.
+    """
+    src = tmp_path / "a.flac"
+    src.touch()
+    job = ConversionJob(
+        infile=src,
+        outfile=tmp_path / "a_out.flac",
+        preset=stub_preset,
+        job_type="convert",
+    )
+
+    backend = _StubBackend([])
+    sink = RecordingProgressSink()
+
+    run_all(
+        jobs=[job],
+        backend=backend,
+        db_path=str(stub_db.db_path),
+        force=False,
+        workers=2,
+        worker_model="thread",
+        verbose=False,
+        progress=sink,
+    )
+
+    # The drain thread runs in the background and processes events; the
+    # run_all() finally block joins it, then drains once more. Give it a
+    # tiny grace window in case the join races the queue.
+    import time
+
+    deadline = time.monotonic() + 2.0
+    while time.monotonic() < deadline:
+        convert_calls = [c for c in sink.calls if c[0] == "log_convert_result"]
+        if convert_calls:
+            break
+        time.sleep(0.01)
+
+    convert_calls = [c for c in sink.calls if c[0] == "log_convert_result"]
+    assert convert_calls, f"expected log_convert_result, got calls: {[c[0] for c in sink.calls]}"
+    # Payload is (infile, outfile, encoder, output_bytes, elapsed_s, status, error_msg)
+    payload = convert_calls[0][1]
+    assert payload[5] == "SUCCESS"
 
 
 def test_run_all_empty_job_list(stub_db: Any) -> None:

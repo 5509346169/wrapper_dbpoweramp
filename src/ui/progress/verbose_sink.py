@@ -74,3 +74,35 @@ class VerboseProgressSink:
             self._console.print(f"verify   Skipped - {reason or 'unsupported format'}   {infile}")
         else:
             self._console.print(f"verify   Not - {reason or 'unknown reason'}   {infile}")
+
+    def log_convert_result(self, infile: str, outfile: str, encoder: str,
+                          output_bytes: int | None, elapsed_s: float,
+                          status: str, error_msg: str | None = None) -> None:
+        """Print a conversion result line to stdout.
+
+        Format: convert  SUCCESS  12.34s  47.2 MiB  FLAC -> ALAC  /path/to/out.m4a
+                convert  FAILED   12.34s        -  FLAC -> ALAC  /path/to/out.m4a  (reason)
+        """
+        import os
+        elapsed_str = f"{elapsed_s:.2f}s"
+
+        if status == "SUCCESS":
+            if output_bytes is not None:
+                if output_bytes >= 1 << 30:
+                    size_str = f"{output_bytes / (1 << 30):.1f} GiB"
+                elif output_bytes >= 1 << 20:
+                    size_str = f"{output_bytes / (1 << 20):.1f} MiB"
+                elif output_bytes >= 1 << 10:
+                    size_str = f"{output_bytes / (1 << 10):.1f} KiB"
+                else:
+                    size_str = f"{output_bytes} B"
+            else:
+                size_str = "?"
+            self._console.print(
+                f"convert  SUCCESS  {elapsed_str}  {size_str:>9}  {encoder}  {outfile}"
+            )
+        else:
+            reason = f"  ({error_msg})" if error_msg else ""
+            self._console.print(
+                f"convert  FAILED   {elapsed_str}         -  {encoder}  {outfile}{reason}"
+            )

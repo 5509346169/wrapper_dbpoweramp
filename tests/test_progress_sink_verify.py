@@ -104,3 +104,126 @@ class TestEventDrainVerifyResult:
         job_tasks: dict = {}
         _drain_events_into_ui(events, sink, job_tasks)
         # No exception means success
+
+
+# ---------------------------------------------------------------------------
+# CONVERT_RESULT tests
+# ---------------------------------------------------------------------------
+
+
+class TestRichSinkConvertResult:
+    """Tests for RichProgressSink.log_convert_result()."""
+
+    def test_log_convert_success(self):
+        from src.ui.progress.rich_sink import RichProgressSink
+
+        sink = RichProgressSink()
+        sink.log_convert_result(
+            "/src/test.flac", "/dst/out.m4a",
+            "ALAC", 47_182_032, 12.345, "SUCCESS",
+        )
+        assert len(sink._log_lines) == 1
+        assert "[convert]" in sink._log_lines[0]
+        assert "SUCCESS" in sink._log_lines[0]
+        assert "12.35s" in sink._log_lines[0]
+        assert "ALAC" in sink._log_lines[0]
+        assert "/dst/out.m4a" in sink._log_lines[0]
+
+    def test_log_convert_failed(self):
+        from src.ui.progress.rich_sink import RichProgressSink
+
+        sink = RichProgressSink()
+        sink.log_convert_result(
+            "/src/test.flac", "/dst/out.m4a",
+            "ALAC", None, 0.001, "FAILED", "CoreConverter exited with code 1",
+        )
+        assert len(sink._log_lines) == 1
+        assert "FAILED" in sink._log_lines[0]
+        assert "CoreConverter exited with code 1" in sink._log_lines[0]
+
+    def test_log_convert_gi_size(self):
+        from src.ui.progress.rich_sink import RichProgressSink
+
+        sink = RichProgressSink()
+        sink.log_convert_result(
+            "/src/test.flac", "/dst/out.m4a",
+            "FLAC", 4_294_967_296, 5.0, "SUCCESS",
+        )
+        assert "4.0 GiB" in sink._log_lines[0]
+
+    def test_log_convert_ki_size(self):
+        from src.ui.progress.rich_sink import RichProgressSink
+
+        sink = RichProgressSink()
+        sink.log_convert_result(
+            "/src/test.flac", "/dst/out.m4a",
+            "FLAC", 50_432, 5.0, "SUCCESS",
+        )
+        assert "49.2 KiB" in sink._log_lines[0]
+
+
+class TestVerboseSinkConvertResult:
+    """Tests for VerboseProgressSink.log_convert_result()."""
+
+    def test_log_convert_success(self, capsys):
+        from src.ui.progress.verbose_sink import VerboseProgressSink
+
+        sink = VerboseProgressSink()
+        sink.log_convert_result(
+            "/src/test.flac", "/dst/out.m4a",
+            "ALAC", 47_182_032, 12.345, "SUCCESS",
+        )
+        captured = capsys.readouterr()
+        assert "convert" in captured.out
+        assert "SUCCESS" in captured.out
+        assert "12.35s" in captured.out
+        assert "ALAC" in captured.out
+        assert "/dst/out.m4a" in captured.out
+
+    def test_log_convert_failed(self, capsys):
+        from src.ui.progress.verbose_sink import VerboseProgressSink
+
+        sink = VerboseProgressSink()
+        sink.log_convert_result(
+            "/src/test.flac", "/dst/out.m4a",
+            "ALAC", None, 0.001, "FAILED", "CoreConverter exited with code 1",
+        )
+        captured = capsys.readouterr()
+        assert "FAILED" in captured.out
+        assert "CoreConverter exited" in captured.out
+        assert "/dst/out.m4a" in captured.out
+
+
+class TestNullSinkConvertResult:
+    """Tests for NullProgressSink.log_convert_result() (no-op)."""
+
+    def test_noop(self):
+        from src.ui.progress.null_sink import NullProgressSink
+
+        sink = NullProgressSink()
+        sink.log_convert_result(
+            "/src/test.flac", "/dst/out.m4a",
+            "ALAC", 47_182_032, 12.345, "SUCCESS",
+        )
+
+
+class TestEventDrainConvertResult:
+    """Tests for CONVERT_RESULT in the event drain."""
+
+    def test_drain_convert_result(self):
+        from queue import Queue
+
+        from src.execution.event_drain import _drain_events_into_ui
+        from src.execution.events import JobEventKind
+        from src.ui.progress.null_sink import NullProgressSink
+
+        events: Queue = Queue()
+        events.put((
+            JobEventKind.CONVERT_RESULT,
+            ("/src/test.flac", "/dst/out.m4a", "ALAC", 47_182_032, 12.345, "SUCCESS", None),
+        ))
+
+        sink = NullProgressSink()
+        job_tasks: dict = {}
+        _drain_events_into_ui(events, sink, job_tasks)
+        # No exception means success

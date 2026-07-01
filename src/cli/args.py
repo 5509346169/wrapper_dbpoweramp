@@ -163,7 +163,9 @@ def _add_execution_args(parser: "ArgumentParser") -> None:
     parser.add_argument(
         "-v", "--verbose",
         action="store_true",
-        help="Live verbose conversion stream",
+        help="Live verbose conversion stream: shows each file's conversion time, "
+             "output size, encoder, verify status, and any errors as they complete. "
+             "Without this flag only the progress bar is shown.",
     )
     parser.add_argument(
         "--verify-output",

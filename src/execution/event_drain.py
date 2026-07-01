@@ -53,6 +53,9 @@ def _drain_events_into_ui(
         elif kind == JobEventKind.VERIFY_RESULT:
             # payload is (infile, status, reason, fmt, duration_s)
             progress.log_verify_result(*payload)  # type: ignore[attr-defined]
+        elif kind == JobEventKind.CONVERT_RESULT:
+            # payload is (infile, outfile, encoder, output_bytes, elapsed_s, status, error_msg)
+            progress.log_convert_result(*payload)  # type: ignore[attr-defined]
 
 
 def _run_event_drain_thread(
