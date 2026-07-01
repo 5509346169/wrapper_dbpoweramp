@@ -101,21 +101,35 @@ class RichProgressSink:
             # into the renderable) will reflect it on its next pass.
             self._refresh_pending = True
 
-    def _make_renderable(self) -> Group:
-        """Build the compact inline stack: bar row + up to LOG_LINES log lines."""
+    def _make_renderable(self) -> Text | Group:
+        """Build the compact inline stack: bar row(s) + up to LOG_LINES log lines.
+
+        The renderer emits a single ``Text`` with embedded newlines (one row
+        per progress bar). Log lines are appended below that Text, separated
+        by ``\\n`` so the whole block is one contiguous Text the Live
+        redraws atomically. Falling back to a ``Group`` here would break the
+        single-renderable contract that Live relies on for clean cursor
+        positioning.
+        """
         renderer = self._renderer
         if renderer is None:
-            progress_renderable = Text("[dim]Idle[/dim]")
+            progress_text = Text("[dim]Idle[/dim]")
         else:
-            progress_renderable = renderer.render()
+            progress_text = renderer.render()
 
-        lines: list[Text] = [progress_renderable]
+        if not self._log_lines:
+            return progress_text
 
-        if self._log_lines:
-            for msg in list(self._log_lines)[-self.LOG_LINES:]:
-                lines.append(Text.from_markup(f"[dim]  {msg}[/dim]"))
-
-        return Group(*lines)
+        # Combine into a single Text with embedded newlines so Live sees one
+        # renderable instead of a Group (which it tracks with separate
+        # height bookkeeping per child).
+        combined = Text()
+        combined.append_text(progress_text)
+        for msg in list(self._log_lines)[-self.LOG_LINES:]:
+            combined.append("\n")
+            combined.append("  ", style="default")
+            combined.append_text(Text.from_markup(msg, style="dim"))
+        return combined
 
     # ------------------------------------------------------------------
     # ProgressSink implementation

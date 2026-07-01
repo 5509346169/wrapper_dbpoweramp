@@ -18,7 +18,6 @@ from src.history.schema import (
     apply_history_pragmas,
 )
 from src.history.migrations import migrate_to_current
-from rich import print as rprint
 
 
 class ConversionDB:
@@ -35,11 +34,16 @@ class ConversionDB:
         apply_history_pragmas(self._conn)
         self._lock = threading.RLock()
         with self._lock:
-            # Auto-migrate to the latest schema version.
+            # Auto-migrate to the latest schema version. Migration is silent
+            # here on purpose: this constructor is called once per worker
+            # thread (and again from the prefilter), so any ``print`` would
+            # race with the Rich Live progress display and corrupt the
+            # terminal. Callers that care about migration messages can
+            # invoke ``migrate_to_current()`` themselves and inspect
+            # ``MigrationResult.messages`` — that's what ``cli/db_cmd.py``
+            # does for the ``db migrate`` subcommand.
             try:
-                result = migrate_to_current(db_path)
-                for msg in result.messages:
-                    rprint(f"[cyan][migration][/cyan] {msg}")
+                migrate_to_current(db_path)
             except Exception as exc:
                 # Fall back to backup on migration failure (migrate_to_current
                 # restores the backup before raising, but we surface the error).

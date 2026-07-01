@@ -86,12 +86,18 @@ def execute_phases(
         if sink is None:
             sink = RichProgressSink(total_bytes=total_bytes)
         if prefilter_skips:
+            # Start the Skipping phase to flush the prefilter's skip list,
+            # then close it cleanly. The summary line ("Skipped N …") is
+            # emitted as a regular stdout line — printing through the sink
+            # here would land in the *next* phase's log area after
+            # ``stop_phase`` clears the buffer, which would look like the
+            # summary belongs to whichever phase comes next.
             sink.start_phase("Skipping", total=len(prefilter_skips))
             for job in prefilter_skips:
                 sink.advance()
                 sink.log_file(f"  {job.infile.name}")
             sink.stop_phase()
-            sink.log(f"Skipped {len(prefilter_skips)} already-converted file(s)")
+            print(f"  Skipped {len(prefilter_skips)} already-converted file(s)")
         phase_summary: dict[str, int] = {"success": 0, "skipped": 0, "failed": 0}
         write_queue = None
         for phase_label, batch in phases:
