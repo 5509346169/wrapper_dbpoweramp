@@ -75,6 +75,7 @@ def execute_phases(
                 verbose=ctx.verbose,
                 progress=sink_for_run,
                 print_to_terminal=ctx.verbose,
+                retry_failed=ctx.failed_only,
             )
         else:
             write_queue = DBWriteQueue(ctx.db_path, ctx.worker_model)
@@ -112,6 +113,7 @@ def execute_phases(
                 verbose=ctx.verbose,
                 progress=sink,
                 print_to_terminal=ctx.verbose,
+                retry_failed=ctx.failed_only,
             )
             for k in phase_summary:
                 phase_summary[k] += conv_summary.get(k, 0)

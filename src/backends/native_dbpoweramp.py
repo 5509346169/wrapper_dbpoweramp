@@ -14,6 +14,7 @@ from src.models.types import (
     JobResult,
     PresetConfig,
 )
+from src.pathing.long_path import stage_paths, unstage
 
 
 class NativeDbpowerampBackend(ConversionBackend):
@@ -71,6 +72,23 @@ class NativeDbpowerampBackend(ConversionBackend):
         encoder = backend_args.encoder or ""
         extra_args = list(backend_args.args)
 
+        # Long-path workaround: on Windows, CoreConverter and its child
+        # encoders (qaac.exe, lame.exe, etc.) call CreateFileW without the
+        # ``\\?\`` prefix, so they fail to open any source/destination path
+        # whose absolute form exceeds MAX_PATH (260 chars). When the
+        # user opts in via ``long_paths: true`` (settings.yaml) or
+        # ``--long-paths`` (CLI), we resolve both paths to their 8.3 short
+        # names, run CoreConverter against the short paths, and rename the
+        # result back to the original long destination on success.
+        # See ``src.pathing.long_path`` for the gory details.
+        staged = stage_paths(
+            infile=job.infile,
+            outfile=job.outfile,
+            enabled=self._cfg.long_paths,
+        )
+        infile_for_cmd = staged.infile
+        outfile_for_cmd = staged.outfile
+
         # CoreConverter uses its own argument parser rather than the standard
         # Windows CommandLineToArgvW rules. It splits the raw command line on
         # whitespace and then strips a single pair of surrounding double quotes
@@ -103,8 +121,8 @@ class NativeDbpowerampBackend(ConversionBackend):
         safe_extra_args = [_quote_extra(a) for a in extra_args]  # fmt: skip
         cmd = (
             f'"{coreconverter_path}" '
-            f'-infile="{job.infile}" '
-            f'-outfile="{job.outfile}" '
+            f'-infile="{infile_for_cmd}" '
+            f'-outfile="{outfile_for_cmd}" '
             f'-convert_to="{encoder}" '
             + " ".join(safe_extra_args)
         )  # fmt: skip
@@ -134,6 +152,30 @@ class NativeDbpowerampBackend(ConversionBackend):
         exit_code = proc.wait()
 
         stdout_text = "".join(stdout_lines)
+
+        if exit_code == 0 and staged.staged:
+            # On NTFS, the short path is just an alias for the same physical
+            # file as the long path — CoreConverter's write is already visible
+            # at the long destination. ``unstage()`` only checks that the
+            # long-path output now exists and is non-empty. If not, it means
+            # CoreConverter exited 0 but didn't actually write anything
+            # (extremely rare; usually a permissions issue or read-only
+            # output volume).
+            if not unstage(staged):
+                return JobResult(
+                    job=job,
+                    status="FAILED",
+                    error_msg=(
+                        f"CoreConverter exited 0 but the expected output at "
+                        f"{staged.long_outfile} is missing or empty. "
+                        "Check that the destination's parent directory is "
+                        "writable and not full."
+                    ),
+                    stdout=stdout_text,
+                )
+            # The on-disk file is now at job.outfile (the long path), which
+            # is where the runner's post-write verifier expects it.
+
         if exit_code == 0:
             return JobResult(job=job, status="SUCCESS", stdout=stdout_text)
         else:

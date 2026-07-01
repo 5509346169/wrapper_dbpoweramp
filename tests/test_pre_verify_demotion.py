@@ -57,6 +57,7 @@ class TestPreVerifyDemotion:
                     mock_ctx = MagicMock()
                     mock_ctx.args = mock_args
                     mock_ctx.db_path = Path("/tmp/history.db")
+                    mock_ctx.failed_only = False
 
                     pending, skipped = prefilter_jobs([job], mock_ctx)
 
@@ -97,6 +98,7 @@ class TestPreVerifyDemotion:
                     mock_ctx = MagicMock()
                     mock_ctx.args = mock_args
                     mock_ctx.db_path = Path("/tmp/history.db")
+                    mock_ctx.failed_only = False
 
                     pending, skipped = prefilter_jobs([job], mock_ctx)
 
@@ -137,6 +139,7 @@ class TestPreVerifyDemotion:
                     mock_ctx = MagicMock()
                     mock_ctx.args = mock_args
                     mock_ctx.db_path = Path("/tmp/history.db")
+                    mock_ctx.failed_only = False
 
                     pending, skipped = prefilter_jobs([job], mock_ctx)
 
@@ -171,6 +174,7 @@ class TestPreVerifyDemotion:
                     mock_ctx = MagicMock()
                     mock_ctx.args = mock_args
                     mock_ctx.db_path = Path("/tmp/history.db")
+                    mock_ctx.failed_only = False
 
                     pending, skipped = prefilter_jobs([job], mock_ctx)
 
@@ -203,6 +207,7 @@ class TestPreVerifyDemotion:
                 mock_ctx = MagicMock()
                 mock_ctx.args = mock_args
                 mock_ctx.db_path = Path("/tmp/history.db")
+                mock_ctx.failed_only = False
 
                 pending, skipped = prefilter_jobs([job], mock_ctx)
 
@@ -248,6 +253,7 @@ class TestPreVerifyDemotion:
                     mock_ctx = MagicMock()
                     mock_ctx.args = mock_args
                     mock_ctx.db_path = Path("/tmp/history.db")
+                    mock_ctx.failed_only = False
 
                     mock_sink = MagicMock()
 
@@ -302,6 +308,7 @@ class TestPreVerifyDemotion:
                     mock_ctx = MagicMock()
                     mock_ctx.args = mock_args
                     mock_ctx.db_path = Path("/tmp/history.db")
+                    mock_ctx.failed_only = False
 
                     pending, skipped = prefilter_jobs([job], mock_ctx, sink=None)
 

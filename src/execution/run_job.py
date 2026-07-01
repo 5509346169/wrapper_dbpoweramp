@@ -60,6 +60,7 @@ def run_job(
     force: bool,
     stream_callback: Optional[Callable[[str], None]],
     events: Optional[Queue] = None,
+    retry_failed: bool = False,
 ) -> tuple[JobStatus, str, str | None]:
     """
     Execute a single ConversionJob.
@@ -74,6 +75,14 @@ def run_job(
             (JobEventKind.STARTED, infile_name) when they begin and
             (JobEventKind.FINISHED, infile_name) when they finish. The main
             thread drains the queue and updates the UI.
+        retry_failed: If True, bypass the ``last_failure`` short-circuit for
+            convert jobs. The prefilter only routes previously-failed jobs
+            into the pending list when ``--failed-only`` is set, so we must
+            actually invoke the backend to give them a fresh attempt instead
+            of replaying the recorded error_msg/stdout. ``--force`` already
+            implies this behaviour, but ``retry_failed`` lets ``--failed-only``
+            get the same retry semantics without taking the broader
+            ``--force`` cost of ignoring the SUCCESS cache.
 
     Returns:
         A tuple of (status, infile_name, error_msg).
@@ -171,16 +180,20 @@ def run_job(
             dest_exists = job.outfile.exists()
             dest_size = job.outfile.stat().st_size if dest_exists else None
 
-            # Check whether this source already failed for the same preset. If so,
-            # we still want to attempt the reconvert (so the user can fix their
-            # environment without first clearing history) but we won't bother
-            # running CoreConverter — the row already records what went wrong.
-            # The trade-off here is intentional: returning early avoids paying
-            # for a guaranteed-failing subprocess call, while still letting the
-            # user retry via --force or by deleting the FAILED history row.
-            prior_failure = db.last_failure(str(job.infile), str(job.outfile), "convert")
+            # Check whether this source already failed for the same preset.
+            # The default behaviour is to short-circuit: a prior FAILED row
+            # tells us the subprocess call is known to fail in this
+            # environment, so we just replay the recorded error and avoid
+            # paying for a guaranteed-failing CoreConverter invocation. The
+            # user can retry via --force, by deleting the FAILED row, or
+            # -- via --retry_failed (driven by --failed-only) -- by asking
+            # for a fresh attempt despite the known-bad history.
+            prior_failure = (
+                None if retry_failed
+                else db.last_failure(str(job.infile), str(job.outfile), "convert")
+            )
 
-            if not force and not prior_failure and db.should_skip(
+            if not force and not prior_failure and not retry_failed and db.should_skip(
                 str(job.infile), str(job.outfile), job_type="convert",
                 dest_file_exists=dest_exists, dest_file_size=dest_size,
             ):

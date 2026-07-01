@@ -291,6 +291,27 @@ python main.py -I ~/Music -O ~/Converted -p flac-lossless --force
 
 ---
 
+### `--failed-only`
+
+**Type:** Flag  
+**Required:** No  
+**Mutually exclusive with:** `--force`
+
+Convert only files whose most recent history row is `FAILED`. Previously-successful files and `job_type='skip'` files are left untouched. Matched files are re-encoded even if a stale `FAILED` history row would normally short-circuit the subprocess call, so any existing or partial output file is overwritten with a fresh attempt. Useful for:
+
+- Retrying files that broke due to a transient issue (full disk, network share offline, locked encoder DLL).
+- Pushing through a batch after fixing an environment problem without re-converting the files that already succeeded.
+
+Under the hood the prefilter bulk-queries `ConversionDB.failed_job_pairs()` for `(source, dest, job_type)` triples with `status='FAILED'` (only `convert` and `copy` job types are considered; `skip` rows are never actionable). Files matching a triple go pending; everything else goes straight to skipped.
+
+```sh
+python main.py -I ~/Music -O ~/Converted -p flac-lossless --failed-only
+```
+
+Pair with `--db` if your history lives somewhere other than the default location.
+
+---
+
 ### `--dry-run`
 
 **Type:** Flag  
@@ -506,6 +527,7 @@ python main.py --db /path/to/history.db db doctor
 | `--exclude` | No | Exclude folders (repeatable) |
 | `--db` | No | History database path |
 | `--force` | No | Ignore resume history |
+| `--failed-only` | No | Convert only files whose latest history row is `FAILED` (overwrites output) |
 | `--dry-run` | No | List jobs without converting |
 | `--list-lossy` | No | Print lossy files and exit |
 | `--build-index` | No | Build index to file |

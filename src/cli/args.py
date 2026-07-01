@@ -64,7 +64,7 @@ def _add_required_args(parser: "ArgumentParser") -> None:
 
 
 def _add_path_args(parser: "ArgumentParser") -> None:
-    """Add --source-path, --exclude, --db, --force."""
+    """Add --source-path, --exclude, --db, --force, --failed-only."""
     parser.add_argument(
         "--source-path",
         type=Path,
@@ -92,6 +92,35 @@ def _add_path_args(parser: "ArgumentParser") -> None:
         "--force",
         action="store_true",
         help="Ignore resume history, reconvert everything",
+    )
+    # --failed-only re-runs only files whose latest history row is FAILED
+    # (job_type in convert/copy). Files not in that set are skipped without
+    # further inspection, and matched files are re-encoded (overwriting any
+    # existing or empty output file at the destination). Mutually exclusive
+    # with --force: --force means "everything", --failed-only means
+    # "only the previously-failed subset".
+    failed_only_group = parser.add_mutually_exclusive_group()
+    failed_only_group.add_argument(
+        "--failed-only",
+        action="store_true",
+        dest="failed_only",
+        default=None,
+        help=(
+            "Convert only files whose most recent history row is FAILED. "
+            "Skipped files (job_type='skip', lossy leaves) and previously "
+            "successful files are left untouched. Matched files are re-run "
+            "even if their FAILED history row would normally short-circuit "
+            "the subprocess call, so any existing/partial destination file "
+            "is overwritten with a fresh attempt. Mutually exclusive with "
+            "--force. Default: off."
+        ),
+    )
+    failed_only_group.add_argument(
+        "--no-failed-only",
+        action="store_false",
+        dest="failed_only",
+        default=None,
+        help="Disable --failed-only (overrides the on-flag default).",
     )
 
 
@@ -197,6 +226,38 @@ def _add_execution_args(parser: "ArgumentParser") -> None:
         action="store_true",
         dest="db_version",
         help="Print history DB schema version and exit.",
+    )
+    # Long-path handling is intentionally separate from --execution-mode-style
+    # flags because it only affects the native dBpoweramp backend (Wine paths
+    # are translated via winepath, and ffmpeg uses argv-style child processes
+    # that don't go through CreateProcessW with long-path-naive Win32 APIs).
+    # Grouping it under execution_args would imply it applies to every backend,
+    # which would be misleading.
+    long_paths_group = parser.add_mutually_exclusive_group()
+    long_paths_group.add_argument(
+        "--long-paths",
+        action="store_true",
+        dest="long_paths",
+        default=None,
+        help=(
+            "Enable Windows long-path workaround: resolve infile/outfile to "
+            "their 8.3 short names before invoking CoreConverter. Required "
+            "when your source or destination path exceeds ~240 chars "
+            "(MAX_PATH=260 + -outfile=\"...\" quoting headroom) — otherwise "
+            "CoreConverter cannot open the file and fails with 'Error "
+            "writing audio data to StdIn Pipe'. On NTFS the short path is "
+            "the same physical file as the long path, so the encoder's "
+            "output is already visible at the long destination after "
+            "CoreConverter exits. Default: off (set in settings.yaml via "
+            "backend.native_dbpoweramp.long_paths)."
+        ),
+    )
+    long_paths_group.add_argument(
+        "--no-long-paths",
+        action="store_false",
+        dest="long_paths",
+        default=None,
+        help="Disable long-path workaround (overrides settings.yaml).",
     )
 
 
@@ -309,6 +370,48 @@ def parse_args(argv: list[str] | None = None) -> "Namespace":
     )
     _add_db_path_arg(doctor_parser)
 
+    inspect_parser = db_sub.add_parser(
+        "inspect",
+        help="Print history rows with full details (source, dest, command, "
+             "error_msg, stdout, verify_status). Useful for debugging "
+             "CoreConverter failures.",
+    )
+    _add_db_path_arg(inspect_parser)
+    inspect_parser.add_argument(
+        "--id",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Show a single row by id.",
+    )
+    inspect_parser.add_argument(
+        "--id-range",
+        type=str,
+        default=None,
+        metavar="MIN-MAX",
+        help="Inclusive id range, e.g. '26338-26423'.",
+    )
+    inspect_parser.add_argument(
+        "--status",
+        choices=("SUCCESS", "FAILED", "SKIPPED"),
+        default=None,
+        help="Filter by status.",
+    )
+    inspect_parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Cap the number of rows printed.",
+    )
+    inspect_parser.add_argument(
+        "--max-stdout",
+        type=int,
+        default=400,
+        metavar="N",
+        help="Truncate stdout to N characters per row (default: 400).",
+    )
+
     return parser.parse_args(argv)
 
 
@@ -410,3 +513,9 @@ def validate_args(args: "Namespace") -> None:
         missing.append("-p/--preset")
     if missing:
         _fail(f"the following arguments are required: {', '.join(missing)}")
+
+    # Rule 11: --force and --failed-only are mutually exclusive — --force means
+    # "convert everything", --failed-only means "convert only the previously
+    # failed subset"; combining them is contradictory.
+    if getattr(args, "force", False) and getattr(args, "failed_only", False):
+        _fail("--force and --failed-only are mutually exclusive")

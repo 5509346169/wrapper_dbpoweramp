@@ -29,6 +29,7 @@ class NativeDbpowerampConfig:
     """Native dBpoweramp backend: path to CoreConverter.exe on Windows."""
 
     coreconverter_path: str
+    long_paths: bool = False
 
 
 @dataclass

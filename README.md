@@ -174,6 +174,7 @@ python main.py db doctor     # check + orphaned .bak probe
 | `--worker-model` | `thread` or `process` (default: from `settings.yaml`) |
 | `--execution-mode` | `hybrid` (interleaved) or `phased` (skip → copy → convert sequentially) |
 | `--force` | Ignore resume history, reconvert everything |
+| `--failed-only` | Convert only files whose latest history row is `FAILED`; everything else is skipped. Matched files are re-encoded (overwriting any existing output). Mutually exclusive with `--force`. |
 | `--dry-run` | Print job list and exit |
 | `--list-lossy` | Scan and print lossy files, then exit |
 | `--build-index PATH` | Build index to file and exit |

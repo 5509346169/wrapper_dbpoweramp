@@ -98,3 +98,109 @@ class TestDbCli:
         from src.cli.db_cmd import cmd_db_check
         result = cmd_db_check(args)
         assert result == 0
+
+    def test_db_inspect_filters_by_status(self, tmp_path: Path, capsys):
+        """cmd_db_inspect prints full diagnostic detail for matching rows."""
+        import sqlite3
+
+        from src.cli.db_cmd import cmd_db_inspect
+
+        db_path = tmp_path / "history.db"
+        _create_v1_db(db_path)
+        from src.history.migrations import migrate_to_current
+        migrate_to_current(db_path)
+
+        # Add a FAILED row with command + stdout so we can see them in output.
+        conn = sqlite3.connect(str(db_path))
+        conn.execute(
+            "INSERT OR REPLACE INTO history "
+            "(source_path, dest_path, job_type, command, status, error_msg, stdout, timestamp) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                r"E:\path with spaces\file.m4a",
+                r"D:\dst\file.m4a",
+                "convert",
+                r'"C:\Program Files\dBpoweramp\CoreConverter.exe" -infile="..." -convert_to="..."',
+                "FAILED",
+                "CoreConverter exited with code 1",
+                "Error: Unable to load decoder for file type '.', codec not installed?\n"
+                "Audio Source: E:\\path",
+                "2026-07-01T12:00:00Z",
+            ),
+        )
+        conn.commit()
+        conn.close()
+
+        args = SimpleNamespace(
+            db_path=db_path,
+            id=None,
+            id_range=None,
+            status="FAILED",
+            limit=None,
+            max_stdout=400,
+        )
+        result = cmd_db_inspect(args)
+        out = capsys.readouterr().out
+        assert result == 0
+        assert "FAILED" in out
+        assert "CoreConverter exited with code 1" in out
+        assert "Unable to load decoder" in out
+
+    def test_db_inspect_filters_by_id_range(self, tmp_path: Path, capsys):
+        """--id-range selects only rows within the inclusive window."""
+        import sqlite3
+
+        from src.cli.db_cmd import cmd_db_inspect
+
+        db_path = tmp_path / "history.db"
+        _create_v1_db(db_path)
+        from src.history.migrations import migrate_to_current
+
+        migrate_to_current(db_path)
+        conn = sqlite3.connect(str(db_path))
+        # Insert 5 rows
+        for i in range(5):
+            conn.execute(
+                "INSERT INTO history (source_path, dest_path, job_type, command, status, timestamp) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (f"/src{i}.flac", f"/dst{i}.flac", "convert", "ffmpeg", "SUCCESS",
+                 f"2026-07-01T12:00:0{i}Z"),
+            )
+        conn.commit()
+        conn.close()
+
+        args = SimpleNamespace(
+            db_path=db_path,
+            id=None,
+            id_range="2-4",
+            status=None,
+            limit=None,
+            max_stdout=400,
+        )
+        result = cmd_db_inspect(args)
+        out = capsys.readouterr().out
+        assert result == 0
+        assert "3 row(s)" in out
+        # ids 2..4 are selected; id 1 and id 5 are not
+        assert "id=2" in out and "id=4" in out
+
+    def test_db_inspect_handles_bad_id_range(self, tmp_path: Path, capsys):
+        """An unparseable --id-range returns a non-zero exit."""
+        from src.cli.db_cmd import cmd_db_inspect
+
+        db_path = tmp_path / "history.db"
+        _create_v1_db(db_path)
+
+        args = SimpleNamespace(
+            db_path=db_path,
+            id=None,
+            id_range="not-a-range",
+            status=None,
+            limit=None,
+            max_stdout=400,
+        )
+        result = cmd_db_inspect(args)
+        captured = capsys.readouterr()
+        assert result != 0
+        combined = captured.out + captured.err
+        assert "MIN" in combined or "integer" in combined.lower()

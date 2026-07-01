@@ -28,6 +28,11 @@ class AppContext:
     worker_model: "WorkerModel"
     execution_mode: "ExecutionMode"
     verbose: bool
+    long_paths: bool = False
+    # When True, the prefilter restricts pending jobs to those whose latest
+    # history row is FAILED, and ``run_job`` re-encodes them instead of
+    # short-circuiting via ``last_failure()``. Default False.
+    failed_only: bool = False
 
 
 @dataclass
@@ -98,6 +103,22 @@ def build_context(args: "Namespace") -> AppContext:
     )
     verbose = args.verbose
 
+    # Long-path workaround: CLI flag overrides settings.yaml. Only meaningful
+    # for the native dBpoweramp backend; we still pass the value through to
+    # the context so the backend can read it from a single source of truth.
+    cli_long_paths = getattr(args, "long_paths", None)
+    long_paths = (
+        cli_long_paths
+        if cli_long_paths is not None
+        else settings.backend.native_dbpoweramp.long_paths
+    )
+
+    # --failed-only is a CLI-only flag (no settings.yaml default — it is a
+    # per-run retry instruction, not a behavioural preference). argparse
+    # leaves ``failed_only`` as ``None`` when the user passed neither flag,
+    # so we collapse that to ``False`` here.
+    failed_only = bool(getattr(args, "failed_only", False))
+
     return AppContext(
         args=args,
         settings=settings,
@@ -109,4 +130,6 @@ def build_context(args: "Namespace") -> AppContext:
         worker_model=worker_model,
         execution_mode=execution_mode,
         verbose=verbose,
+        long_paths=long_paths,
+        failed_only=failed_only,
     )

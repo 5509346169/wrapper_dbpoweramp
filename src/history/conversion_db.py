@@ -247,6 +247,48 @@ class ConversionDB:
                 "verify_reason": row[4],
             }
 
+    def failed_job_pairs(
+        self, job_types: tuple[str, ...] = ("convert", "copy"),
+    ) -> set[tuple[str, str, str]]:
+        """Return all (source_path, dest_path, job_type) triples whose history
+        row has ``status = 'FAILED'`` for any of ``job_types``.
+
+        Used by ``--failed-only`` to bulk-identify which jobs to retry.
+
+        The current history schema enforces ``UNIQUE(source_path, dest_path,
+        job_type)`` and the wrapper uses ``INSERT OR REPLACE`` to overwrite a
+        row in place when the same source/destination is re-converted —
+        therefore at most one row exists per (source, dest, job_type), and
+        that row's status is by definition the "latest" result. We sort by
+        ``id DESC`` defensively so a future schema migration that loosens
+        the UNIQUE constraint (e.g., audit-log rows) would still report the
+        most-recent attempt.
+
+        Args:
+            job_types: Tuple of job_type values to include. Defaults to
+                ``('convert', 'copy')`` — ``skip`` rows are never actionable
+                and ``convert/copy`` are the only job_types the runner
+                actually executes.
+
+        Returns:
+            Set of ``(source_path, dest_path, job_type)`` triples that the
+            caller should retry. Empty when no failed rows exist.
+        """
+        if not job_types:
+            return set()
+        placeholders = ", ".join("?" * len(job_types))
+        with self._lock:
+            cursor = self._conn.execute(
+                f"""
+                SELECT source_path, dest_path, job_type
+                FROM history
+                WHERE status = 'FAILED' AND job_type IN ({placeholders})
+                ORDER BY id DESC
+                """,
+                job_types,
+            )
+            return {(row[0], row[1], row[2]) for row in cursor.fetchall()}
+
     def close(self) -> None:
         """Close the SQLite connection."""
         with self._lock:

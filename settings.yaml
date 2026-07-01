@@ -3,6 +3,18 @@ backend:
   auto_detect: true               # auto-detect Windows vs Wine environment (Windows=native_dbpoweramp, Linux/Mac=Wine)
   native_dbpoweramp:
     coreconverter_path: "C:\\Program Files\\dBpoweramp\\CoreConverter.exe"
+    # Enable Windows long-path workaround. When true, the wrapper resolves
+    # infile/outfile to their 8.3 short names before invoking CoreConverter
+    # on paths whose absolute form exceeds ~240 chars. Required if any of
+    # your source/destination paths are deeply nested (e.g. JP album folders
+    # with kanji + Roman artist/album names routinely exceed MAX_PATH=260).
+    # Without this, CoreConverter cannot open the file and the converter
+    # fails with "Error writing audio data to StdIn Pipe" plus a 0-byte
+    # output. On non-NTFS volumes or when 8.3 names are disabled
+    # (``fsutil 8dot3name set``) the helper degrades to a no-op and the
+    # original long path is passed through unchanged. Override at runtime
+    # with --long-paths / --no-long-paths.
+    long_paths: false
   wine_dbpoweramp:
     wine_binary: "wine"
     wine_prefix: "~/.wine-dbpoweramp"          # WINEPREFIX env var value

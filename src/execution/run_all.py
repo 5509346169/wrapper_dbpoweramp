@@ -40,6 +40,7 @@ def run_all(
     verbose: bool,
     progress: ProgressSink,
     print_to_terminal: bool = False,
+    retry_failed: bool = False,
 ) -> tuple[dict[str, int], list[Future], Queue, DBWriteQueue]:
     """
     Execute a list of ConversionJobs using a thread or process pool.
@@ -58,6 +59,9 @@ def run_all(
             and log lines. In parallel (workers > 1) mode the caller drains the
             shared event queue and forwards events here. In single-worker mode the
             events are drained inline alongside job completion.
+        retry_failed: If True, convert jobs bypass the ``last_failure``
+            short-circuit so previously-failed files get a fresh subprocess
+            attempt. Set when the user passes ``--failed-only``.
 
     Returns:
         A tuple of (summary dict with success/skipped/failed counts, list of futures,
@@ -109,6 +113,7 @@ def run_all(
                     force,
                     stream_cb,
                     events,
+                    retry_failed,
                 )
                 for job in jobs
             ]

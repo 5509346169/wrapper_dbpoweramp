@@ -429,6 +429,18 @@ Override the history database path from `settings.yaml`.
 
 Ignore resume history and reconvert everything. By default, already-converted files are skipped.
 
+### `--failed-only`
+
+| Property | Value |
+|----------|-------|
+| Type | Flag |
+| Required | No |
+| Mutually exclusive with | `--force` |
+
+Convert only files whose most recent history row is `FAILED`. Previously-successful files and `job_type='skip'` files are left untouched. Matched files are re-encoded even if a stale `FAILED` history row would normally short-circuit the subprocess call, so any existing or partial output file is overwritten with a fresh attempt.
+
+The prefilter bulk-queries `ConversionDB.failed_job_pairs()` for `(source, dest, job_type)` triples with `status='FAILED'` (only `convert` and `copy` job types are considered; `skip` rows are never actionable). Files matching a triple go pending; everything else goes straight to skipped.
+
 ## Quick reference
 
 | Flag | Required | Description |
@@ -449,6 +461,7 @@ Ignore resume history and reconvert everything. By default, already-converted fi
 | `--exclude` | No | Exclude folders (repeatable) |
 | `--db` | No | History database path |
 | `--force` | No | Ignore resume history |
+| `--failed-only` | No | Convert only files whose latest history row is `FAILED` (overwrites output) |
 | `--dry-run` | No | List jobs without converting |
 | `--list-lossy` | No | Print lossy files and exit |
 | `--build-index` | No | Build index to file |

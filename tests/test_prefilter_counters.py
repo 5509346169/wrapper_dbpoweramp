@@ -57,6 +57,7 @@ class TestPrefilterCallsSetCounters:
             mock_ctx = MagicMock()
             mock_ctx.args = mock_args
             mock_ctx.db_path = Path("/tmp/history.db")
+            mock_ctx.failed_only = False
 
             mock_sink = MagicMock()
 
@@ -106,6 +107,7 @@ class TestPrefilterCallsSetCounters:
             mock_ctx = MagicMock()
             mock_ctx.args = mock_args
             mock_ctx.db_path = Path("/tmp/history.db")
+            mock_ctx.failed_only = False
             mock_sink = MagicMock()
 
             with patch("src.app.pipeline.prefilter.ConversionDB", return_value=mock_db):

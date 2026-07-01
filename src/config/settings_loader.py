@@ -120,10 +120,12 @@ def load_settings(path: Path | str) -> Settings:
     if not isinstance(nd, dict):
         nd = {}
     nd_path = nd.get("coreconverter_path")
+    nd_long_paths = _bool(nd, "long_paths", "backend.native_dbpoweramp.long_paths", default=False)
     native_dbpoweramp = NativeDbpowerampConfig(
         coreconverter_path=_str(nd, "coreconverter_path", "backend.native_dbpoweramp.coreconverter_path", allow_empty=False)
         if nd_path
         else "C:\\Program Files\\dBpoweramp\\CoreConverter.exe",
+        long_paths=nd_long_paths,
     )
 
     wd = _get(backend_data, "wine_dbpoweramp", "backend.wine_dbpoweramp")

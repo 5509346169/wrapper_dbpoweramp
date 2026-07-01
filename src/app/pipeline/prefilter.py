@@ -24,6 +24,12 @@ def prefilter_jobs(
     Applies the pre-verify gate when --verify-skip is set: skip candidates whose
     on-disk output fails a full-frame decode are demoted to pending (forced reconvert).
 
+    When ``ctx.failed_only`` is True, only jobs whose latest history row is
+    FAILED remain pending; everything else is skipped. This takes precedence
+    over the resume-cache check (so a previously-FAILED-but-now-skippable job
+    is still retried) and over ``--force``'s semantics (which ``validate_args``
+    makes mutually exclusive).
+
     Args:
         jobs: All jobs from the build step.
         ctx: The application context.
@@ -39,6 +45,45 @@ def prefilter_jobs(
 
     if sink is None:
         sink = NullProgressSink()
+
+    # ── --failed-only branch (runs before the normal resume-cache check) ──
+    # The user's instruction is explicit: convert only files whose latest
+    # history row is FAILED, leave everything else alone. We bulk-load the
+    # failed triples once and split the jobs in O(N) without touching the
+    # skip-cache logic at all.
+    #
+    # We consult ``ctx.failed_only`` (the resolved AppContext bool) rather
+    # than ``ctx.args.failed_only`` directly. ``build_context`` collapses the
+    # argparse ``None``-default to ``False`` there; the existing prefilter
+    # tests build a MagicMock for ``args`` whose unset attribute is also a
+    # MagicMock (truthy), which would otherwise route every test through
+    # this branch.
+    if getattr(ctx, "failed_only", False):
+        sink.start_phase("Filtering to failed-only", total=len(jobs))
+        try:
+            db = ConversionDB(ctx.db_path)
+            try:
+                failed_set = db.failed_job_pairs(("convert", "copy"))
+            finally:
+                db.close()
+            for job in jobs:
+                key = (str(job.infile), str(job.outfile), job.job_type)
+                if key in failed_set:
+                    pending_jobs.append(job)
+                else:
+                    skipped_jobs.append(job)
+            sink.log(
+                f"[failed-only] {len(pending_jobs)} previously-failed job(s) "
+                f"queued for retry, {len(skipped_jobs)} other file(s) skipped "
+                f"(matched against latest history row only)."
+            )
+        finally:
+            # Advance the bar even though there is no per-file work; the user
+            # should still see a 100% complete "Filtering to failed-only" bar.
+            for _ in range(len(jobs)):
+                sink.advance()
+            sink.stop_phase()
+        return pending_jobs, skipped_jobs
 
     if not ctx.args.force:
         db = ConversionDB(ctx.db_path)

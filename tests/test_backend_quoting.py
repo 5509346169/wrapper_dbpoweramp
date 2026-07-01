@@ -263,3 +263,122 @@ class TestWineBackendQuoting:
         # The orphan "AAC" must not leak as a separate token.
         for token in cmd.split():
             assert token != "AAC", f"orphan token leaked into cmd: {cmd!r}"
+
+
+class TestNativeBackendLongPathStaging:
+    """Long-path workaround: when enabled, CoreConverter must see short
+    paths; the long-path output is implicitly updated because on NTFS
+    the short path is the same physical file as the long path."""
+
+    def test_long_paths_off_passes_long_paths_through(self):
+        from src.backends.native_dbpoweramp import NativeDbpowerampBackend
+
+        backend = NativeDbpowerampBackend(_settings_native())
+        # A path short enough that staging won't kick in even if the flag
+        # were on. We assert that the cmd preserves the long path verbatim.
+        job = MagicMock()
+        job.infile = Path("C:/Music/in.m4a")
+        job.outfile = Path("C:/Music/out.m4a")
+        job.preset = _preset(["-keepsr"], Backend.NATIVE_DBPOWERAMP)
+
+        captured: dict[str, object] = {}
+
+        def fake_popen(cmd, **kwargs):
+            captured["cmd"] = cmd
+            proc = MagicMock()
+            from io import StringIO
+            proc.stdout = StringIO()
+            proc.wait.return_value = 0
+            return proc
+
+        with patch("src.backends.native_dbpoweramp.subprocess.Popen", side_effect=fake_popen):
+            result = backend.run(job, stream_callback=None)
+
+        assert result.status == "SUCCESS", result.error_msg
+        assert '-infile="C:\\Music\\in.m4a"' in captured["cmd"]
+
+    def test_long_paths_on_with_short_resolution_stages(self):
+        from src.backends.native_dbpoweramp import NativeDbpowerampBackend
+        from src.config.settings_loader import (
+            BackendConfig,
+            NativeDbpowerampConfig,
+        )
+
+        # Build a settings instance with long_paths=True.
+        base = _settings_native()
+        settings = type(base)(
+            backend=BackendConfig(
+                default=base.backend.default,
+                auto_detect=base.backend.auto_detect,
+                wine_dbpoweramp=base.backend.wine_dbpoweramp,
+                native_dbpoweramp=NativeDbpowerampConfig(
+                    coreconverter_path=base.backend.native_dbpoweramp.coreconverter_path,
+                    long_paths=True,
+                ),
+                native_ffmpeg=base.backend.native_ffmpeg,
+            ),
+            tools=base.tools,
+            history=base.history,
+            execution=base.execution,
+            logging=base.logging,
+        )
+
+        backend = NativeDbpowerampBackend(settings)
+
+        # Real long paths on disk so GetShortPathNameW resolves them.
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_p = Path(tmp)
+            long_infile = tmp_p / ("a" * 200) / "in.m4a"
+            long_outfile = tmp_p / ("a" * 200) / "out.m4a"
+            long_infile.parent.mkdir(parents=True, exist_ok=True)
+            long_outfile.parent.mkdir(parents=True, exist_ok=True)
+            long_infile.write_bytes(b"x" * 100)
+
+            job = MagicMock()
+            job.infile = long_infile
+            job.outfile = long_outfile
+            job.preset = _preset(["-keepsr"], Backend.NATIVE_DBPOWERAMP)
+
+            captured: dict[str, object] = {}
+
+            def fake_popen(cmd, **kwargs):
+                captured["cmd"] = cmd
+                import re
+                m = re.search(r'-outfile="([^"]+)"', cmd)
+                assert m is not None, f"cmd missing -outfile=: {cmd!r}"
+                captured["short_outfile"] = m.group(1)
+
+                # Simulate CoreConverter writing the output to the short
+                # path. On NTFS, the short path is the same file as the
+                # long path (same inode), so the long-path file is also
+                # written.
+                Path(m.group(1)).parent.mkdir(parents=True, exist_ok=True)
+                Path(m.group(1)).write_bytes(b"converted-audio")
+
+                proc = MagicMock()
+                from io import StringIO
+                proc.stdout = StringIO()
+                proc.wait.return_value = 0
+                return proc
+
+            with patch("src.backends.native_dbpoweramp.subprocess.Popen", side_effect=fake_popen):
+                result = backend.run(job, stream_callback=None)
+
+            assert result.status == "SUCCESS", result.error_msg
+            cmd = captured["cmd"]
+            # The short path was passed to CoreConverter, NOT the long one.
+            assert str(long_infile) not in cmd, (
+                f"long path leaked into cmd despite long_paths=True: {cmd!r}"
+            )
+            assert str(long_outfile) not in cmd, (
+                f"long outfile leaked into cmd: {cmd!r}"
+            )
+            # Because short and long paths share an inode on NTFS, the
+            # write to the short path is immediately visible at the long
+            # path — no explicit rename needed.
+            assert long_outfile.exists(), "long-path output not visible after CoreConverter exit"
+            assert long_outfile.read_bytes() == b"converted-audio", (
+                "long-path output content does not match what CoreConverter wrote"
+            )

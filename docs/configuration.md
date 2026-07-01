@@ -26,6 +26,7 @@ backend:
   auto_detect: true               # Auto-detect Windows vs Wine environment
   native_dbpoweramp:
     coreconverter_path: "C:\\Program Files\\dBpoweramp\\CoreConverter.exe"
+    long_paths: false             # Enable Windows long-path workaround (see below)
   wine_dbpoweramp:
     wine_binary: "wine"
     wine_prefix: "~/.wine-dbpoweramp"
@@ -113,6 +114,38 @@ backend:
   native_dbpoweramp:
     coreconverter_path: "C:\\Program Files\\dBpoweramp\\CoreConverter.exe"
 ```
+
+##### `backend.native_dbpoweramp.long_paths`
+
+**Type:** Boolean  
+**Default:** `false`
+
+Enable the Windows long-path workaround. When `true`, the wrapper resolves
+`infile` and `outfile` to their 8.3 short names before invoking
+CoreConverter on paths whose absolute form exceeds ~240 chars (the safety
+threshold below Windows' MAX_PATH=260 + CreateProcessW quoting headroom).
+
+Without this, CoreConverter cannot open the file (its `CreateFileW` calls
+don't use the `\\?\` long-path prefix) and the conversion fails with
+`Conversion Failed. Error writing audio data to StdIn Pipe` and a 0-byte
+output file. This is a common failure on libraries with deeply nested
+artist/album folders (especially JP/en libraries with kanji names) where
+the absolute path easily exceeds 260 chars.
+
+The runtime CLI flag `--long-paths` / `--no-long-paths` overrides this
+setting. On non-Windows platforms or when 8.3 names are disabled on the
+volume (`fsutil 8dot3name set`), the helper degrades to a no-op and the
+original long path is passed through unchanged.
+
+```yaml
+backend:
+  native_dbpoweramp:
+    long_paths: true
+```
+
+> See also: [CLI reference — `--failed-only`](cli.md#--failed-only) for
+> retrying only the previously-failed subset of a batch without re-running
+> files that already succeeded.
 
 ---
 

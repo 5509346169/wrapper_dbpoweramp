@@ -32,6 +32,10 @@ def main() -> int:
             from src.cli.db_cmd import cmd_db_doctor
 
             return cmd_db_doctor(args)
+        if args.db_command == "inspect":
+            from src.cli.db_cmd import cmd_db_inspect
+
+            return cmd_db_inspect(args)
         dispatch = {"check": db_check, "migrate": db_migrate}
         return dispatch[args.db_command](args)
 

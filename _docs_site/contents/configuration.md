@@ -117,6 +117,35 @@ backend:
     coreconverter_path: "C:\\Program Files\\dBpoweramp\\CoreConverter.exe"
 ```
 
+##### `long_paths`
+
+| Property | Value |
+|----------|-------|
+| Type | Boolean |
+| Default | `false` |
+
+Enable the Windows long-path workaround. When `true`, the wrapper resolves
+`infile` and `outfile` to their 8.3 short names before invoking
+CoreConverter on paths whose absolute form exceeds ~240 chars (the safety
+threshold below Windows' MAX_PATH=260 + CreateProcessW quoting headroom).
+
+Without this, CoreConverter cannot open the file (its `CreateFileW` calls
+don't use the `\\?\` long-path prefix) and the conversion fails with
+`Conversion Failed. Error writing audio data to StdIn Pipe` and a 0-byte
+output file. Common on libraries with deeply nested artist/album folders
+(especially JP/en libraries with kanji names).
+
+The runtime CLI flag `--long-paths` / `--no-long-paths` overrides this
+setting. On non-Windows platforms or when 8.3 names are disabled on the
+volume (`fsutil 8dot3name set`), the helper degrades to a no-op and the
+original long path is passed through unchanged.
+
+```yaml
+backend:
+  native_dbpoweramp:
+    long_paths: true
+```
+
 #### `backend.wine_dbpoweramp`
 
 Configuration for the Wine + dBpoweramp backend.
