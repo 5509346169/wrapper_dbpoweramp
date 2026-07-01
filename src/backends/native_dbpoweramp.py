@@ -91,7 +91,16 @@ class NativeDbpowerampBackend(ConversionBackend):
         # (e.g. -encoding="SLOW"); we strip those, since CoreConverter treats
         # them as value terminators and the embedded quotes in our preset
         # flags are decorative wrappers (e.g. SLOW → SLOW).
-        safe_extra_args = [a.replace('"', "") for a in extra_args]  # fmt: skip
+        #
+        # If the resulting value contains whitespace, it MUST be re-wrapped in
+        # literal double quotes — otherwise CreateProcessW will split it into
+        # multiple tokens and the trailing fragment will be treated as a
+        # separate (and unknown) argument, which is why e.g. qaac-cvbr-256's
+        # -codec="LC AAC" silently produced a 0-byte file.
+        def _quote_extra(arg: str) -> str:
+            stripped = arg.replace('"', "")
+            return f'"{stripped}"' if any(c.isspace() for c in stripped) else stripped
+        safe_extra_args = [_quote_extra(a) for a in extra_args]  # fmt: skip
         cmd = (
             f'"{coreconverter_path}" '
             f'-infile="{job.infile}" '

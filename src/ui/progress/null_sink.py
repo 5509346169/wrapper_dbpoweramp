@@ -25,6 +25,12 @@ class NullProgressSink:
     def log(self, message: str) -> None:
         pass
 
+    def log_file(self, message: str) -> None:
+        """No-op mirror of RichProgressSink.log_file. The verbose mode never
+        renders a master bar so per-decision file logs are silent here.
+        """
+        pass
+
     def stop(self) -> None:
         pass
 
@@ -35,6 +41,9 @@ class NullProgressSink:
         pass
 
     def set_phase_label(self, label: str) -> None:
+        pass
+
+    def set_counters(self, demoted: int = 0, kept: int = 0) -> None:
         pass
 
     def log_verify_result(self, infile: str, status: str, reason: str | None,

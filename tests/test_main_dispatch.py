@@ -108,3 +108,38 @@ class TestParseArgsDispatchFlags:
             args = parse_args()
             assert args.command == "db"
             assert args.db_command == "doctor"
+
+
+class TestPlaylistCLI:
+    """Tests for --playlist CLI argument parsing and validation."""
+
+    def test_playlist_flag_parses(self):
+        from src.cli.args import parse_args
+
+        args = parse_args(["--playlist", "/path/to/playlist.m3u", "-O", "/out", "-p", "flac"])
+        assert args.playlist == Path("/path/to/playlist.m3u")
+        assert args.input is None
+
+    def test_input_and_playlist_mutually_exclusive(self):
+        """Passing both --input and --playlist raises argparse error."""
+        import io, sys as test_sys
+        from src.cli.args import parse_args
+        from unittest.mock import patch
+
+        with patch.object(test_sys, "argv", ["prog", "--playlist", "/a.m3u", "-I", "/b", "-O", "/out", "-p", "flac"]):
+            with patch.object(test_sys, "stderr", io.StringIO()):
+                with pytest.raises(SystemExit) as exc_info:
+                    parse_args()
+                assert exc_info.value.code == 2  # argparse error 2 = usage error
+
+    def test_playlist_requires_output_and_preset(self):
+        import io, sys as test_sys
+        from src.cli.args import parse_args, validate_args
+        from unittest.mock import patch
+
+        with patch.object(test_sys, "argv", ["prog", "--playlist", "/a.m3u"]):
+            args = parse_args()
+        with patch.object(test_sys, "stderr", io.StringIO()):
+            with pytest.raises(SystemExit) as exc_info:
+                validate_args(args)
+            assert exc_info.value.code == 1

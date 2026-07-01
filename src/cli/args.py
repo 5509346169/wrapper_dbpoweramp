@@ -28,12 +28,25 @@ def _add_required_args(parser: "ArgumentParser") -> None:
     which need the conversion flags. ``validate_args`` enforces them
     after parsing.
     """
-    parser.add_argument(
+    # --input and --playlist are mutually exclusive — only one is needed at a time.
+    input_group = parser.add_mutually_exclusive_group()
+    input_group.add_argument(
         "-I", "--input",
         type=Path,
         default=None,
         metavar="PATH",
         help="File or directory to convert",
+    )
+    input_group.add_argument(
+        "--playlist",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help=(
+            "Playlist file (.m3u / .m3u8 / .pls) listing files to convert. "
+            "Paths in the playlist are resolved relative to the playlist's directory; "
+            "absolute paths are used as-is. Mutually exclusive with -I/--input."
+        ),
     )
     parser.add_argument(
         "-O", "--output",
@@ -317,17 +330,20 @@ def validate_args(args: "Namespace") -> None:
     Raises:
         SystemExit: If any validation rule is violated.
     """
-    # Rule 1: --source-path must be ancestor of --input
+    # Rule 1: --source-path must be ancestor of --input (or --playlist's parent)
     if args.source_path is not None:
         input_to_check: Path
-        if args.input.is_file():
+        if args.playlist is not None:
+            input_to_check = args.playlist.parent
+        elif args.input.is_file():
             input_to_check = args.input.parent
         else:
             input_to_check = args.input
         if not input_to_check.is_relative_to(args.source_path):
+            target = args.playlist if args.playlist is not None else args.input
             _fail(
                 f"--source-path {args.source_path} is not an ancestor of "
-                f"--input {args.input}"
+                f"--input {target}"
             )
 
     # Rule 2: --lossy-action and --no-lossy-check are contradictory
@@ -372,10 +388,20 @@ def validate_args(args: "Namespace") -> None:
     if getattr(args, "command", None) == "db":
         return
 
-    # Rule 8: -I, -O, -p are required for the conversion pipeline.
+    # Rule 8: exactly one of (-I/--input, --playlist) is required, plus -O and -p.
+    has_input = getattr(args, "input", None) is not None
+    has_playlist = getattr(args, "playlist", None) is not None
+    if not has_input and not has_playlist:
+        _fail("one of -I/--input or --playlist is required")
+
+    # Rule 9: --playlist must exist as a readable file.
+    # (The mutual exclusivity of --input and --playlist is enforced by argparse
+    # itself via add_mutually_exclusive_group(), so no runtime check is needed here.)
+    if has_playlist and not args.playlist.is_file():
+        _fail(f"--playlist file does not exist or is not a file: {args.playlist}")
+
+    # Rule 10: -O and -p remain required.
     missing: list[str] = []
-    if getattr(args, "input", None) is None:
-        missing.append("-I/--input")
     if getattr(args, "output", None) is None:
         missing.append("-O/--output")
     if getattr(args, "preset", None) is None:

@@ -51,6 +51,10 @@ class VerboseProgressSink:
         """Verbose sink: print the new tier label as a header."""
         self._console.print(f"[{label}]")
 
+    def set_counters(self, demoted: int = 0, kept: int = 0) -> None:
+        """Verbose sink: counters are not applicable (output goes to stdout)."""
+        pass
+
     def log_result(self, filename: str, job_type: str, is_lossy: bool | None = None) -> None:
         """Print file processing result to stdout."""
         lossy_marker = " [LOSSY]" if is_lossy else ""

@@ -72,34 +72,51 @@ def prefilter_jobs(
             # ── Pass 2: verify_file() per skip candidate with a progress bar. ──
             if skip_candidates:
                 if ctx.args.verify_skip:
-                    phase_name = "Pre-verifying cached outputs"
+                    phase_name = f"Pre-verifying {len(skip_candidates):,} files"
                 else:
                     # Defensive: verify_skip can change between Pass 1 and Pass 2
                     # only via threading; if it did, fall back to the existing
                     # no-verify branch semantics.
-                    phase_name = "Filtering cached outputs"
+                    phase_name = f"Filtering {len(skip_candidates):,} cached output(s)"
                 sink.start_phase(phase_name, total=len(skip_candidates))
+                sink.set_activity("verifying")
                 demoted = 0
+                kept = 0
                 try:
-                    for job in skip_candidates:
+                    for idx, job in enumerate(skip_candidates, start=1):
                         if ctx.args.verify_skip:
                             pre = verify_file(job.outfile)
                             if pre.status is VerifyStatus.NOT_OK:
                                 pending_jobs.append(job)
                                 demoted += 1
-                                sink.log(
-                                    f"[preverify] demoted: {job.outfile.name} "
-                                    f"({pre.reason or 'unknown'})"
-                                )
+                                # Only log when something was actually demoted.
+                                # Throttle the UI refresh to every 50 demotes to keep
+                                # the bar responsive for large skip-candidate lists
+                                # (25k+ files). Always log the final file.
+                                is_last = (idx == len(skip_candidates))
+                                if is_last or (demoted % 50 == 1):
+                                    short_reason = (pre.reason or 'unknown').splitlines()[0][:60]
+                                    sink.log_file(
+                                        f"[preverify] demoted #{idx}/{len(skip_candidates)}: "
+                                        f"{job.outfile.name} ({short_reason})"
+                                    )
                             else:
                                 skipped_jobs.append(job)
+                                kept += 1
                         else:
                             skipped_jobs.append(job)
+                            kept += 1
                         sink.advance()
+                        # Update inline counters: every 50 advances for responsive
+                        # telemetry without re-rendering on every single file.
+                        if idx % 50 == 0:
+                            sink.set_counters(demoted=demoted, kept=kept)
                 finally:
+                    sink.set_counters(demoted=demoted, kept=kept)
                     sink.log(
                         f"[preverify] {len(skip_candidates)} checked, "
-                        f"{demoted} demoted for reconvert"
+                        f"{demoted} demoted for reconvert, "
+                        f"{kept} kept (cache valid)"
                     )
                     sink.stop_phase()
             # else: nothing to verify — no phase was opened, so don't close one.

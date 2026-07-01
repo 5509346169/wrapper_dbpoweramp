@@ -137,7 +137,15 @@ class WineDbpowerampBackend(ConversionBackend):
         # argument parser rather than CommandLineToArgvW rules and splits on
         # whitespace. We pass the command line as a single pre-formatted string
         # (shell=False) so wine forwards it verbatim to CoreConverter.exe.
-        safe_extra_args = [a.replace('"', "") for a in extra_args]
+        # If a stripped extra arg contains whitespace it must be re-wrapped
+        # in literal double quotes, otherwise CreateProcessW (which Wine
+        # ultimately drives on Windows) will tokenise it on the space — e.g.
+        # -codec="LC AAC" without the wrapper becomes -codec=LC and the
+        # orphan "AAC" silently breaks the QAAC invocation.
+        def _quote_extra(arg: str) -> str:
+            stripped = arg.replace('"', "")
+            return f'"{stripped}"' if any(c.isspace() for c in stripped) else stripped
+        safe_extra_args = [_quote_extra(a) for a in extra_args]
         cmd = (
             f'"{wine_binary}" "{coreconverter_path}" '
             f'-infile="{wine_infile}" '

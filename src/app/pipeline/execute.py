@@ -24,6 +24,7 @@ def execute_phases(
     ctx: "AppContext",
     phase_state: "MutablePhaseState",
     total_bytes: int = 0,
+    sink: "ProgressSink | None" = None,
 ) -> tuple[dict[str, int], "DBWriteQueue | None"]:
     """Execute all phases through run_all, handling both verbose and rich sink modes.
 
@@ -32,6 +33,12 @@ def execute_phases(
         ctx: The application context.
         phase_state: MutablePhaseState holding prefilter_skips and other phase results.
         total_bytes: Total bytes for the rich progress bar.
+        sink: Optional externally-built ProgressSink. When provided, this sink
+            is reused across the Skipping and per-phase bars so a single Live
+            instance stays alive for the lifetime of the caller's prefilter →
+            execute flow. When None (default), this function builds its own
+            RichProgressSink/NullProgressSink based on ``ctx.verbose`` and is
+            responsible for tearing it down via ``sink.stop()`` on exit.
 
     Returns:
         A tuple of (summary dict with success/skipped/failed, write_queue or None).
@@ -40,8 +47,20 @@ def execute_phases(
     write_queue: "DBWriteQueue | None" = None
     prefilter_skips = phase_state.prefilter_skips
 
+    # When the caller hands us a sink, we are a *guest* of its Live renderer —
+    # we may use it (start_phase / advance / stop_phase) but we MUST NOT call
+    # sink.stop() because the caller will reuse or tear down the sink itself.
+    # Track that with ``owns_sink`` so the verbose and rich branches can both
+    # honor it.
+    owns_sink = sink is None
+
     if ctx.verbose:
-        sink: "ProgressSink" = NullProgressSink()
+        sink_for_run: "ProgressSink"
+        if sink is None:
+            sink_for_run = NullProgressSink()
+            sink = sink_for_run
+        else:
+            sink_for_run = sink
         progress_active = False
         if prefilter_skips:
             print(f"[Skipping] {len(prefilter_skips)} already-converted file(s)")
@@ -57,14 +76,15 @@ def execute_phases(
                 workers=ctx.workers,
                 worker_model=ctx.worker_model,
                 verbose=ctx.verbose,
-                progress=sink,
+                progress=sink_for_run,
                 print_to_terminal=ctx.verbose,
             )
         else:
             write_queue = DBWriteQueue(ctx.db_path, ctx.worker_model)
         summary = phase_summary
     else:
-        sink = RichProgressSink(total_bytes=total_bytes)
+        if sink is None:
+            sink = RichProgressSink(total_bytes=total_bytes)
         if prefilter_skips:
             sink.start_phase("Skipping", total=len(prefilter_skips))
             for job in prefilter_skips:
@@ -109,7 +129,9 @@ def execute_phases(
             sink.stop_phase()
         progress_active = True
         summary = phase_summary
-        sink.stop()
+
+    if owns_sink and not ctx.verbose:
+        sink.stop()  # type: ignore[union-attr]
 
     if write_queue is not None:
         write_queue.flush()

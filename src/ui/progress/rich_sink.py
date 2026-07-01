@@ -122,17 +122,29 @@ class RichProgressSink:
     # ------------------------------------------------------------------
 
     def start_phase(self, name: str, total: int) -> None:
-        """Begin a new phase with a master progress bar."""
-        # Stop any existing Live before creating a new one.  Without this,
-        # successive calls to start_phase (scan -> probe -> convert) leave
-        # orphaned Live instances whose cursors remain on the terminal,
-        # causing flickering and overlapping output.
+        """Begin a new phase with a master progress bar.
+
+        If a Live is already active from a previous phase, reuses it instead
+        of creating a new one — this prevents terminal flicker and cursor
+        repositioning between phases when the same sink is shared across
+        scan → enrich → prefilter → convert.
+        """
         if self._live is not None:
-            try:
-                self._live.__exit__(None, None, None)
-            except Exception:
-                pass
-            self._live = None
+            # Reuse the existing Live: swap out the renderer (which carries
+            # phase name, bar state, counters) and push the new renderable
+            # so the next Live tick picks it up without flicker.
+            self._renderer = _ProgressRenderer(
+                total=total,
+                total_bytes=self._total_bytes,
+                console=self._console,
+                phase_name=name,
+            )
+            self._last_phase_label = name
+            self._live.update(self._make_renderable())
+            self._live.refresh()
+            self._refresh()
+            return
+
         self._renderer = _ProgressRenderer(
             total=total,
             total_bytes=self._total_bytes,
@@ -148,6 +160,10 @@ class RichProgressSink:
             screen=False,
         )
         self._live.__enter__()
+        # Force a synchronous first render immediately so the bar appears on
+        # screen before the first result arrives — eliminates the gap where the
+        # terminal shows nothing until the refresh thread fires 50-100ms later.
+        self._live.refresh()
         self._refresh()
 
     def advance(self, amount: int = 1) -> None:
@@ -237,4 +253,20 @@ class RichProgressSink:
             return
         self._last_phase_label = label
         self._renderer.set_phase_name(label)
+        self._refresh()
+
+    def set_counters(self, demoted: int = 0, kept: int = 0) -> None:
+        """Update per-decision counters shown next to the master bar.
+
+        The verify-skip preverify phase uses this to advertise demote/keep
+        totals as the bar advances. Other sinks implement the same name as a
+        no-op so the prefilter can call it without branching on sink type.
+
+        Args:
+            demoted: Number of skip candidates demoted to pending so far.
+            kept: Number of skip candidates kept on the skip list so far.
+        """
+        if self._renderer is None:
+            return
+        self._renderer.counters(demoted=demoted, kept=kept)
         self._refresh()

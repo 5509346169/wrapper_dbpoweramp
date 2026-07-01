@@ -161,7 +161,9 @@ def scan_with_progress(
     lyrics_policy = getattr(preset, "lyrics", None) if preset is not None else None
     covers_policy = getattr(preset, "covers", None) if preset is not None else None
 
-    for infile, file_size, mtime in audio_files:
+    # Throttle log_file output: only emit every 50 files so the UI stays
+    # responsive even when scanning thousands of files. The final file always logs.
+    for idx, (infile, file_size, mtime) in enumerate(audio_files, start=1):
         sidecar_basenames = _collect_sidecar_basenames(infile, lyrics_policy, covers_policy)
         sidecar_map[infile] = sidecar_basenames
         if cache is not None:
@@ -181,8 +183,12 @@ def scan_with_progress(
                 mtime=mtime,
             )
         )
-        if hasattr(progress, "log_file"):
-            progress.log_file(f"  {infile.name} ({_format_bytes(file_size)})")
+        is_last = (idx == total)
+        # Log every 50 files + the final file to keep the log area informative
+        # without spamming the display. The bar always advances.
+        if is_last or idx % 50 == 0:
+            if hasattr(progress, "log_file"):
+                progress.log_file(f"  {infile.name} ({_format_bytes(file_size)})")
         progress.advance()
 
     if cache is not None:

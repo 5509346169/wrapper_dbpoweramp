@@ -59,6 +59,7 @@ def build_context(args: "Namespace") -> AppContext:
     from src.config.preset_loader import get_preset, load_presets
     from src.config.settings_loader import load_settings
     from src.exceptions import BackendError, PresetNotFoundError
+    from src.models.types import ExecutionMode
 
     # 1. Load config + presets
     settings = load_settings(Path("settings.yaml"))
@@ -92,7 +93,9 @@ def build_context(args: "Namespace") -> AppContext:
     db_path = args.db if args.db is not None else Path(settings.history.db_path)
     workers = args.workers if args.workers is not None else settings.execution.default_workers
     worker_model = args.worker_model if args.worker_model is not None else settings.execution.worker_model
-    execution_mode = getattr(args, "execution_mode", None) or settings.execution.execution_mode
+    execution_mode = ExecutionMode(
+        getattr(args, "execution_mode", None) or settings.execution.execution_mode
+    )
     verbose = args.verbose
 
     return AppContext(

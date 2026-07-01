@@ -10,7 +10,7 @@ from typing import Callable, Optional
 from src.audio.integrity import VerifyStatus, verify_file
 from src.backends.base import ConversionBackend
 from src.history.db import ConversionDB, DBWriteQueue
-from src.models.types import ConversionJob, JobStatus
+from src.models.types import ConversionJob, JobResult, JobStatus
 from src.sidecars.manager import copy_covers, copy_lyrics
 
 from src.execution.events import JobEventKind
@@ -132,7 +132,16 @@ def run_job(
             dest_exists = job.outfile.exists()
             dest_size = job.outfile.stat().st_size if dest_exists else None
 
-            if not force and db.should_skip(
+            # Check whether this source already failed for the same preset. If so,
+            # we still want to attempt the reconvert (so the user can fix their
+            # environment without first clearing history) but we won't bother
+            # running CoreConverter — the row already records what went wrong.
+            # The trade-off here is intentional: returning early avoids paying
+            # for a guaranteed-failing subprocess call, while still letting the
+            # user retry via --force or by deleting the FAILED history row.
+            prior_failure = db.last_failure(str(job.infile), str(job.outfile), "convert")
+
+            if not force and not prior_failure and db.should_skip(
                 str(job.infile), str(job.outfile), job_type="convert",
                 dest_file_exists=dest_exists, dest_file_size=dest_size,
             ):
@@ -141,7 +150,20 @@ def run_job(
                 return status, infile_name, error_msg
 
             job.outfile.parent.mkdir(parents=True, exist_ok=True)
-            result = backend.run(job, stream_callback)
+
+            if prior_failure:
+                # Skip the subprocess call; reuse the prior failure metadata so
+                # the user can see *why* the previous run failed without paying
+                # for another CoreConverter invocation that's already known to
+                # produce the same broken output.
+                result = JobResult(
+                    job=job,
+                    status="FAILED",
+                    error_msg=prior_failure.get("error_msg") or "previously failed",
+                    stdout=prior_failure.get("stdout") or "",
+                )
+            else:
+                result = backend.run(job, stream_callback)
 
             if result.status == "SUCCESS":
                 # Verify output file before marking as success
@@ -157,6 +179,23 @@ def run_job(
                 if not is_valid:
                     result.status = "FAILED"
                     result.error_msg = verify_error
+                    output_size = job.outfile.stat().st_size if job.outfile.exists() else 0
+                    db.log_conversion(
+                        source=str(job.infile),
+                        dest=str(job.outfile),
+                        job_type=job.job_type,
+                        command=None,
+                        status="FAILED",
+                        error_msg=verify_error,
+                        stdout=result.stdout,
+                        file_size=output_size,
+                        verify_status=verify_status,
+                        verify_reason=verify_reason,
+                        verify_format=None,
+                        verify_duration_s=verify_duration_s,
+                    )
+                    status = "FAILED"
+                    error_msg = verify_error
                 else:
                     copy_lyrics(job.infile, job.outfile, job.preset.lyrics)
                     copy_covers(job.infile, job.outfile, job.preset.covers)
@@ -175,8 +214,8 @@ def run_job(
                         verify_format=None,
                         verify_duration_s=verify_duration_s,
                     )
-                status = result.status
-                error_msg = result.error_msg
+                    status = result.status
+                    error_msg = result.error_msg
             else:
                 # Non-success status (e.g. backend returned FAILED before verification)
                 if events is not None:
@@ -184,6 +223,24 @@ def run_job(
                         JobEventKind.VERIFY_RESULT,
                         (infile_name, "UNSUPPORTED", None, None, None),
                     ))
+                # Record the failure so subsequent runs (without --force) short-circuit
+                # via last_failure() and so the user can audit failed jobs with
+                # purge_failed_audio.py or the GUI.
+                output_size = job.outfile.stat().st_size if job.outfile.exists() else 0
+                db.log_conversion(
+                    source=str(job.infile),
+                    dest=str(job.outfile),
+                    job_type=job.job_type,
+                    command=None,
+                    status="FAILED",
+                    error_msg=result.error_msg,
+                    stdout=result.stdout,
+                    file_size=output_size,
+                    verify_status=None,
+                    verify_reason=None,
+                    verify_format=None,
+                    verify_duration_s=None,
+                )
                 status = result.status
                 error_msg = result.error_msg
 

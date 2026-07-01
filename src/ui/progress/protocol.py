@@ -61,6 +61,15 @@ class ProgressSink(Protocol):
         """Append a message to the log area."""
         ...
 
+    def log_file(self, message: str) -> None:
+        """Append a file-level message (the rich sink strips embedded markup first).
+
+        Sinks that don't render per-file entries (e.g. ``NullProgressSink``)
+        should implement this as a silent no-op so callers don't need to
+        branch on sink type.
+        """
+        ...
+
     def stop(self) -> None:
         """Stop rendering. Safe to call without a prior ``start_phase`` call."""
         ...
@@ -79,6 +88,15 @@ class ProgressSink(Protocol):
         Used when one phase (e.g. ``Probing``) internally transitions
         between sub-stages (Extension -> Folder -> Mutagen) and the
         bar should keep advancing but show the current tier.
+        """
+        ...
+
+    def set_counters(self, demoted: int = 0, kept: int = 0) -> None:
+        """Update per-decision counters shown next to the master bar.
+
+        The verify-skip preverify phase uses this to advertise demote/keep
+        totals as the bar advances. Sinks that don't render a master bar
+        should implement this as a no-op.
         """
         ...
 

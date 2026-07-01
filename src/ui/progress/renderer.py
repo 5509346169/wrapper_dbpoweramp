@@ -77,6 +77,20 @@ class _ProgressRenderer:
         """Mark a bar done and remove it."""
         self._bars.pop(bar_id, None)
 
+    def counters(self, demoted: int = 0, kept: int = 0) -> None:
+        """Update the running per-decision counters shown next to the bar.
+
+        The preverify phase uses this to make demote/keep totals visible as
+        the bar advances, instead of waiting for the final summary log. Both
+        defaults are 0 so existing callers don't need to change.
+
+        Args:
+            demoted: Number of skip candidates demoted to pending so far.
+            kept: Number of skip candidates kept on the skip list so far.
+        """
+        self._demoted = demoted
+        self._kept = kept
+
     def render(self) -> Table:
         """Build the Table renderable for the current state."""
         table = Table.grid(padding=(0, 1), pad_edge=False)
@@ -104,12 +118,22 @@ class _ProgressRenderer:
 
         activity_str = f" [dim]({self._activity})[/dim]" if self._activity else ""
 
+        # Preverify inline counters — shown only when populated so the
+        # convert/copy phases keep their existing layout untouched.
+        counter_str = ""
+        if (getattr(self, "_demoted", 0) + getattr(self, "_kept", 0)) > 0:
+            d = getattr(self, "_demoted", 0)
+            k = getattr(self, "_kept", 0)
+            counter_str = (
+                f"  [yellow]\u2191{d} demote[/yellow]  [green]\u2713{k} kept[/green]"
+            )
+
         row: list[Text | str] = [
-            f"[bold]{self._phase_name}[/] [bold cyan]{self._master_done}/{self._total}[/] [dim]({left_str})[/dim]{activity_str}",
+            f"[bold]{self._phase_name}[/] [bold cyan]{self._master_done}/{self._total}[/] [dim]({left_str})[/dim]{activity_str}{counter_str}",
             master_bar,
             f"{self._pct(self._master_done, self._total):>6}",
             remaining_s,
-        ]
+        ]  # fmt: skip
         if self._total_bytes is not None:
             row.append(bytes_str)
         table.add_row(*row)

@@ -41,8 +41,13 @@ def run(ctx: "AppContext") -> int:
             return 0
 
         # ── Enrich ───────────────────────────────────────────────────────────
+        # input_root is the base directory used for relative-path math.
+        # In playlist mode, use the playlist's parent directory as the base so the
+        # output mirrors the structure the user would get with --input on that dir.
         input_root: Path
-        if ctx.args.input.is_file():
+        if ctx.args.playlist is not None:
+            input_root = ctx.args.playlist.parent
+        elif ctx.args.input.is_file():
             input_root = ctx.args.input.parent
         else:
             input_root = ctx.args.input
@@ -56,13 +61,17 @@ def run(ctx: "AppContext") -> int:
             except OSError as exc:
                 print(f"warning: could not open index DB {index_db_path}: {exc}", file=__import__('sys').stderr)
 
+        # One shared sink keeps a single Live instance alive across scan → enrich →
+        # prefilter → execute so the progress bar never flickers or disappears
+        # between phases. Pass None in verbose mode to keep stdout clean.
+        enrich_sink = RichProgressSink(total_files=len(scan_result.rows)) if not ctx.verbose else None
         enriched_rows, lossy_files_found = enrich(
             scan_rows=scan_result.rows,
             input_root=input_root,
             source_root=source_root,
             output_root=ctx.args.output,
             ctx=ctx,
-            progress=RichProgressSink() if not ctx.verbose else None,
+            progress=enrich_sink,
             index_builder=index_builder,
         )
 
@@ -84,10 +93,10 @@ def run(ctx: "AppContext") -> int:
             check_lossy_gate(len(lossy_files_found), ctx)
 
         # ── Pre-filter ──────────────────────────────────────────────────────
-        # Reuse the same sink as enrich() so the pre-verify bar matches the
-        # rest of the pipeline; pass None in verbose mode to keep stdout clean.
-        prefetch_sink = RichProgressSink() if not ctx.verbose else None
-        pending_jobs, skipped_jobs = prefilter_jobs(jobs, ctx, sink=prefetch_sink)
+        # Reuse the same sink as enrich() so the pre-verify bar uses the same
+        # Live instance without flicker. When ctx.verbose is True the enrich
+        # sink is None so prefilter also gets None (no-op).
+        pending_jobs, skipped_jobs = prefilter_jobs(jobs, ctx, sink=enrich_sink)
         phase_state.pending_jobs = pending_jobs
         phase_state.skipped_jobs = skipped_jobs
 
@@ -105,7 +114,17 @@ def run(ctx: "AppContext") -> int:
         # ── Execute ──────────────────────────────────────────────────────────
         phases = run_jobs_by_phase(pending_for_pool, ctx)
 
-        summary, _ = execute_phases(phases, ctx, phase_state, total_bytes=total_bytes)
+        # Pass enrich_sink so the Skipping → Copying/Converting bars reuse the
+        # same Live instance the enrich/prefilter phases already used. Without
+        # this, execute_phases builds a new RichProgressSink which would
+        # briefly flash and tear down on each phase boundary.
+        summary, _ = execute_phases(
+            phases,
+            ctx,
+            phase_state,
+            total_bytes=total_bytes,
+            sink=enrich_sink,
+        )
         print_summary(summary)
 
         # ── Cleanup ───────────────────────────────────────────────────────────

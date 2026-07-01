@@ -199,6 +199,50 @@ class ConversionDB:
                 return False
             return True
 
+    def last_failure(
+        self, source: str, dest: str, job_type: str,
+    ) -> Optional[dict]:
+        """Return the most recent failure metadata for a (source, dest, job_type) tuple.
+
+        Used by the runner to short-circuit repeated failed conversions: if
+        ``run_job`` is asked to process a source that already has a FAILED
+        history row for the same destination and job_type, it can reuse the
+        recorded error_msg/stdout without paying for another CoreConverter
+        invocation that's already known to fail in this environment.
+
+        Returns the row dict (with keys ``error_msg``, ``stdout``,
+        ``verify_reason``, ``verify_status``) or None if no failure row exists
+        — including the case where a SUCCESS row exists.
+
+        Args:
+            source: Source file path.
+            dest: Destination file path.
+            job_type: 'convert' or 'copy'.
+
+        Returns:
+            Dict with ``error_msg`` and ``stdout`` keys (plus any verify_*
+            fields the row had populated), or None if no FAILED row exists.
+        """
+        with self._lock:
+            cursor = self._conn.execute(
+                "SELECT status, error_msg, stdout, verify_status, verify_reason "
+                "FROM history "
+                "WHERE source_path = ? AND dest_path = ? AND job_type = ? "
+                "ORDER BY timestamp DESC LIMIT 1",
+                (source, dest, job_type),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                return None
+            if row[0] != "FAILED":
+                return None
+            return {
+                "error_msg": row[1],
+                "stdout": row[2],
+                "verify_status": row[3],
+                "verify_reason": row[4],
+            }
+
     def close(self) -> None:
         """Close the SQLite connection."""
         with self._lock:

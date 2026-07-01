@@ -74,8 +74,10 @@ def enrich_index_rows_streaming(
     # Tier counters are racy across worker threads but the worst case
     # is a slightly off summary number — fine for telemetry.
     tier_counts: dict[CascadeTier, int] = {t: 0 for t in CascadeTier}
+    _probed_count: int = 0  # used only for throttled log output
 
     def _handle_result(f: Path, is_lossy_val: bool | None, tier: CascadeTier | None) -> None:
+        nonlocal _probed_count
         row = path_to_row[f]
         classify(
             row, is_lossy_val, lossy_action, no_lossy_check,
@@ -85,9 +87,18 @@ def enrich_index_rows_streaming(
             index_builder.add(row)
         if is_lossy_val:
             lossy_files_found.append(f)
-        if hasattr(progress, "log_file"):
+        _probed_count += 1
+        # Throttle log output: emit every 50 results + the final result.
+        # Always log the first 3 and the last file so the user sees a sample
+        # early and gets confirmation the phase is still running at the end.
+        is_last = (_probed_count == total)
+        should_log = is_last or _probed_count <= 3 or _probed_count % 50 == 0
+        if should_log and hasattr(progress, "log_file"):
             tier_tag = f"[{tier.value}]" if tier is not None else ""
-            progress.log_file(f"  {tier_tag:>10} {f.name} -> {row.job_type} {'[LOSSY]' if is_lossy_val else ''}")
+            progress.log_file(
+                f"  {tier_tag:>10} {f.name} -> {row.job_type} "
+                f"{'[LOSSY]' if is_lossy_val else ''}"
+            )
         progress.advance()
 
     if no_lossy_check:

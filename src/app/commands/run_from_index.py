@@ -8,7 +8,11 @@ from typing import TYPE_CHECKING
 from src.index.builder import IndexBuilder
 from src.index.scanner import IndexRow
 from src.models.types import ConversionJob
-from src.ui.progress_view import RichProgressSink, VerboseProgressSink
+from src.ui.progress_view import (
+    ProgressSink,
+    RichProgressSink,
+    VerboseProgressSink,
+)
 
 if TYPE_CHECKING:
     from src.app.context import AppContext
@@ -50,9 +54,24 @@ def run(ctx: "AppContext") -> int:
     if summary_info["lossy"] > 0:
         check_lossy_gate(summary_info["lossy"], ctx)
 
+    # Build one shared sink so the preverify + execute phases share a single
+    # Live instance. Without this, prefilter_jobs() falls back to
+    # NullProgressSink (silent) and the execute-phase bar flashes for a
+    # fraction of a second on an empty batch. Verbose mode uses
+    # VerboseProgressSink so the existing verbose pipeline path still works.
+    sink: ProgressSink
+    if ctx.verbose:
+        sink = VerboseProgressSink()
+    else:
+        sink = RichProgressSink(
+            total_files=len(source_rows),
+            total_bytes=summary_info["total_bytes"],
+        )
+
     with install_signal_guard() as guard:
-        # Pre-filter jobs
-        pending_jobs, skipped_jobs = prefilter_jobs(jobs, ctx)
+        # Pre-filter jobs — sink is shared with execute_phases below so the
+        # Live instance stays alive across the preverify → execute transition.
+        pending_jobs, skipped_jobs = prefilter_jobs(jobs, ctx, sink=sink)
         phase_state = MutablePhaseState()
         phase_state.pending_jobs = pending_jobs
         phase_state.skipped_jobs = skipped_jobs
@@ -69,6 +88,12 @@ def run(ctx: "AppContext") -> int:
         total_bytes = summary_info["total_bytes"]
         phases = run_jobs_by_phase(pending_for_pool, ctx)
 
-        summary, _ = execute_phases(phases, ctx, phase_state, total_bytes=total_bytes)
+        summary, _ = execute_phases(
+            phases,
+            ctx,
+            phase_state,
+            total_bytes=total_bytes,
+            sink=sink,
+        )
         print_summary(summary)
         return 0
