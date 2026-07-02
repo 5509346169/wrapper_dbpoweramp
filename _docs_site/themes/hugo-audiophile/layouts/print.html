@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{{ with .Title }}{{ . }} — {{ end }}{{ .Site.Title }}</title>
+  <link rel="stylesheet" href="/css/main.css">
+</head>
+<body class="theme-print">
+  <article class="prose">
+    {{ .Content }}
+  </article>
+</body>
+</html>

@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light"><script src="/wrapper_dbpoweramp/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=wrapper_dbpoweramp/livereload" data-no-instant defer></script><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f6f4ee" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f1216" media="(prefers-color-scheme: dark)">
+
+<title>Module Reference — dBpoweramp Wrapper</title>
+<meta name="description" content="Every src/ module with classes, dataclasses, and key functions.">
+
+<link rel="canonical" href="http://localhost:1313/wrapper_dbpoweramp/reference/modules/">
+
+
+<link rel="preload" as="font" type="font/woff2" href="/assets/fonts/bodoni-moda-var.woff2" crossorigin>
+<link rel="preload" as="font" type="font/woff2" href="/assets/fonts/geist-var.woff2" crossorigin>
+<link rel="preload" as="font" type="font/woff2" href="/assets/fonts/jetbrains-mono-var.woff2" crossorigin>
+
+<link rel="stylesheet" href="/css/main.css">
+
+<script type="module" src="/assets/vendor/theme.js" defer></script>
+<script type="module" src="/assets/vendor/waveform.js" defer></script>
+<script type="module" src="/assets/vendor/search-palette.js" defer></script>
+<script type="module" src="/assets/vendor/diagrams.js" defer></script>
+<body class="theme-shell">
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div class="shell"><header class="shell__header">
+  <div class="header__inner">
+    <a class="header__brand" href="/">
+      <span class="header__mark">dB</span>
+      <span class="header__wordmark">dBpoweramp Wrapper</span>
+    </a>
+
+    <nav class="header__nav" aria-label="Sections"><a class="header__nav-item"
+           href="/wrapper_dbpoweramp/architecture/">
+          Architecture
+        </a><a class="header__nav-item"
+           href="/wrapper_dbpoweramp/configuration/">
+          settings.yaml Reference
+        </a><a class="header__nav-item"
+           href="/wrapper_dbpoweramp/overview/">
+          Overview
+        </a><a class="header__nav-item"
+           href="/wrapper_dbpoweramp/engineering/">
+          Engineerings
+        </a><a class="header__nav-item"
+           href="/wrapper_dbpoweramp/getting-started/">
+          Getting-Starteds
+        </a><a class="header__nav-item is-active"
+           href="/wrapper_dbpoweramp/reference/">
+          References
+        </a></nav>
+
+    <div class="header__actions">
+      <button class="header__cmd" type="button"
+              data-cmdk-open
+              aria-label="Open command palette (Ctrl/Cmd-K)">
+        <kbd>Ctrl</kbd><kbd>K</kbd>
+      </button>
+      <button class="header__theme" type="button"
+              data-theme-toggle
+              aria-label="Toggle dark mode">
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" fill="currentColor"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+</header>
+<aside class="shell__left sidebar" aria-label="Section navigation"><details class="sidebar__group">
+      <summary class="sidebar__group-label">Architecture</summary>
+      <ul class="sidebar__list"><li>
+            <a class="sidebar__item"
+               href="/wrapper_dbpoweramp/architecture/workflow/">
+              Workflow
+            </a>
+          </li><li>
+            <a class="sidebar__item"
+               href="/wrapper_dbpoweramp/architecture/backends/">
+              Backends Reference
+            </a>
+          </li></ul>
+    </details><details class="sidebar__group">
+      <summary class="sidebar__group-label">settings.yaml Reference</summary>
+      <ul class="sidebar__list"><li>
+            <a class="sidebar__item"
+               href="/wrapper_dbpoweramp/configuration/cli/">
+              Command-Line Interface
+            </a>
+          </li><li>
+            <a class="sidebar__item"
+               href="/wrapper_dbpoweramp/configuration/presets/">
+              Presets Reference
+            </a>
+          </li></ul>
+    </details><details class="sidebar__group">
+      <summary class="sidebar__group-label">Overview</summary>
+      <ul class="sidebar__list"></ul>
+    </details><details class="sidebar__group">
+      <summary class="sidebar__group-label">Engineerings</summary>
+      <ul class="sidebar__list"><li>
+            <a class="sidebar__item"
+               href="/wrapper_dbpoweramp/engineering/file-index/">
+              File Index System
+            </a>
+          </li><li>
+            <a class="sidebar__item"
+               href="/wrapper_dbpoweramp/engineering/lossy-handling/">
+              Lossy Source Handling
+            </a>
+          </li><li>
+            <a class="sidebar__item"
+               href="/wrapper_dbpoweramp/engineering/sidecar-files/">
+              Sidecar Files
+            </a>
+          </li><li>
+            <a class="sidebar__item"
+               href="/wrapper_dbpoweramp/engineering/error-handling/">
+              Error Handling
+            </a>
+          </li><li>
+            <a class="sidebar__item"
+               href="/wrapper_dbpoweramp/engineering/testing/">
+              Testing
+            </a>
+          </li></ul>
+    </details><details class="sidebar__group">
+      <summary class="sidebar__group-label">Getting-Starteds</summary>
+      <ul class="sidebar__list"><li>
+            <a class="sidebar__item"
+               href="/wrapper_dbpoweramp/getting-started/installation/">
+              Installation
+            </a>
+          </li></ul>
+    </details><details class="sidebar__group open">
+      <summary class="sidebar__group-label">References</summary>
+      <ul class="sidebar__list"><li>
+            <a class="sidebar__item"
+               href="/wrapper_dbpoweramp/reference/api/">
+              Public API Reference
+            </a>
+          </li><li>
+            <a class="sidebar__item is-active"
+               href="/wrapper_dbpoweramp/reference/modules/">
+              Module Reference
+            </a>
+          </li></ul>
+    </details></aside>
+<main id="main" class="shell__main"><div class="prose">
+  <p>This document provides detailed reference for each module in the <code>src/</code> package. For the architectural role of each module and how they interact at runtime, see <a href="/wrapper_dbpoweramp/architecture/">Architecture</a>.</p>
+<h2 id="package-structure">Package structure</h2>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>src/
+</span></span><span style="display:flex;"><span>├── __init__.py
+</span></span><span style="display:flex;"><span>├── exceptions.py              # Custom exception classes
+</span></span><span style="display:flex;"><span>├── app/                       # Post-refactor application structure
+</span></span><span style="display:flex;"><span>│   ├── context.py             # AppContext + build_context(args)
+</span></span><span style="display:flex;"><span>│   ├── backend.py             # Backend resolution
+</span></span><span style="display:flex;"><span>│   ├── commands/              # CLI command implementations
+</span></span><span style="display:flex;"><span>│   ├── lifecycle/             # tmp/, scan-cache, signals
+</span></span><span style="display:flex;"><span>│   └── pipeline/              # scan/enrich/execute orchestrators
+</span></span><span style="display:flex;"><span>├── audio/
+</span></span><span style="display:flex;"><span>│   ├── inspector.py           # Multi-tier lossy detection
+</span></span><span style="display:flex;"><span>│   ├── integrity.py           # VerifyStatus, verify_file()
+</span></span><span style="display:flex;"><span>│   └── verify_backends.py     # soundfile/miniaudio/mutagen verifiers
+</span></span><span style="display:flex;"><span>├── backends/
+</span></span><span style="display:flex;"><span>│   ├── base.py                # ConversionBackend ABC
+</span></span><span style="display:flex;"><span>│   ├── registry.py            # Backend factory + selection
+</span></span><span style="display:flex;"><span>│   ├── native_ffmpeg.py
+</span></span><span style="display:flex;"><span>│   ├── native_dbpoweramp.py
+</span></span><span style="display:flex;"><span>│   └── wine_dbpoweramp.py
+</span></span><span style="display:flex;"><span>├── cli/
+</span></span><span style="display:flex;"><span>│   ├── args.py                # argparse + validation
+</span></span><span style="display:flex;"><span>│   └── db_cmd.py              # db {check,migrate,doctor} subcommands
+</span></span><span style="display:flex;"><span>├── config/
+</span></span><span style="display:flex;"><span>│   ├── settings_loader.py
+</span></span><span style="display:flex;"><span>│   └── preset_loader.py
+</span></span><span style="display:flex;"><span>├── execution/
+</span></span><span style="display:flex;"><span>│   ├── events.py
+</span></span><span style="display:flex;"><span>│   ├── event_drain.py
+</span></span><span style="display:flex;"><span>│   ├── run_job.py
+</span></span><span style="display:flex;"><span>│   └── run_all.py
+</span></span><span style="display:flex;"><span>├── history/
+</span></span><span style="display:flex;"><span>│   ├── conversion_db.py
+</span></span><span style="display:flex;"><span>│   ├── write_queue.py
+</span></span><span style="display:flex;"><span>│   ├── migrations.py
+</span></span><span style="display:flex;"><span>│   └── schema.py
+</span></span><span style="display:flex;"><span>├── index/
+</span></span><span style="display:flex;"><span>│   ├── scanner.py
+</span></span><span style="display:flex;"><span>│   ├── builder.py
+</span></span><span style="display:flex;"><span>│   ├── cleanup.py
+</span></span><span style="display:flex;"><span>│   └── scan_cache.py
+</span></span><span style="display:flex;"><span>├── jobs/
+</span></span><span style="display:flex;"><span>│   ├── builder.py
+</span></span><span style="display:flex;"><span>│   ├── enrich.py
+</span></span><span style="display:flex;"><span>│   └── classify.py
+</span></span><span style="display:flex;"><span>├── models/
+</span></span><span style="display:flex;"><span>│   └── types.py
+</span></span><span style="display:flex;"><span>├── pathing/
+</span></span><span style="display:flex;"><span>│   └── resolver.py
+</span></span><span style="display:flex;"><span>├── sidecars/
+</span></span><span style="display:flex;"><span>│   └── manager.py
+</span></span><span style="display:flex;"><span>└── ui/
+</span></span><span style="display:flex;"><span>    ├── progress_view.py
+</span></span><span style="display:flex;"><span>    └── progress/
+</span></span><span style="display:flex;"><span>        ├── protocol.py
+</span></span><span style="display:flex;"><span>        ├── renderer.py
+</span></span><span style="display:flex;"><span>        ├── rich_sink.py
+</span></span><span style="display:flex;"><span>        ├── verbose_sink.py
+</span></span><span style="display:flex;"><span>        └── null_sink.py
+</span></span></code></pre></div><h2 id="srcapp"><code>src/app/</code></h2>
+<p>Post-refactor application structure. All modules are internal.</p>
+<h3 id="contextpy"><code>context.py</code></h3>
+<p><code>AppContext</code> frozen dataclass bundles <code>args</code>, <code>settings</code>, <code>preset</code>, <code>backend</code>, <code>backend_name</code>, <code>db_path</code>, <code>workers</code>, <code>worker_model</code>, <code>execution_mode</code>, <code>verbose</code>. <code>build_context(args) -&gt; AppContext</code> factory resolves all fields from the parsed CLI namespace.</p>
+<h3 id="backendpy"><code>backend.py</code></h3>
+<p><code>_resolve_backend_name()</code> + <code>supports()</code> compatibility gate.</p>
+<h3 id="lifecyclesignalspy"><code>lifecycle/signals.py</code></h3>
+<p><code>SignalGuard</code> context manager — installs SIGINT/SIGTERM handlers, yields a guard whose <code>.interrupted</code> flag is set by the handlers, restores originals on exit.</p>
+<h3 id="lifecycletempdirpy"><code>lifecycle/tempdir.py</code></h3>
+<p><code>tmp/</code> directory lifecycle (create on entry, delete on clean exit, preserve on failure/interrupt).</p>
+<h3 id="lifecyclescan_cachepy"><code>lifecycle/scan_cache.py</code></h3>
+<p>Scan cache open/close wrapper.</p>
+<h3 id="pipelinescanpy"><code>pipeline/scan.py</code></h3>
+<p><code>scan_with_progress</code> / <code>load_rows_from_cache</code> orchestration.</p>
+<h3 id="pipelineenrichpy"><code>pipeline/enrich.py</code></h3>
+<p>Calls <code>src/jobs/enrich.py</code> for lossy probe.</p>
+<h3 id="pipelinejobspy"><code>pipeline/jobs.py</code></h3>
+<p><code>_row_to_job</code> + lossy-gate check.</p>
+<h3 id="pipelineprefilterpy"><code>pipeline/prefilter.py</code></h3>
+<p><code>should_skip</code> loop + pre-verify gate (<code>--verify-skip</code>).</p>
+<h3 id="pipelinephasespy"><code>pipeline/phases.py</code></h3>
+<p><code>_run_jobs_by_phase</code> (phased execution mode).</p>
+<h3 id="pipelineexecutepy"><code>pipeline/execute.py</code></h3>
+<p>Verbose/Rich sink + <code>run_all</code> loop + futures draining.</p>
+<h3 id="pipelinereportingpy"><code>pipeline/reporting.py</code></h3>
+<p>Final &ldquo;Done. Success: &hellip;&rdquo; summary + <code>_format_bytes</code>.</p>
+<h3 id="commands"><code>commands/</code></h3>
+<table>
+	<thead>
+			<tr>
+					<th>Module</th>
+					<th>Entry point</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td><code>commands/build_index.py</code></td>
+					<td><code>cmd_build_index(ctx)</code></td>
+			</tr>
+			<tr>
+					<td><code>commands/run_from_index.py</code></td>
+					<td><code>cmd_run_from_index(ctx)</code></td>
+			</tr>
+			<tr>
+					<td><code>commands/run_pipeline.py</code></td>
+					<td>Main scan + enrich + execute flow</td>
+			</tr>
+			<tr>
+					<td><code>commands/dry_run.py</code></td>
+					<td><code>cmd_dry_run(ctx)</code></td>
+			</tr>
+			<tr>
+					<td><code>commands/list_lossy.py</code></td>
+					<td><code>cmd_list_lossy(ctx)</code></td>
+			</tr>
+			<tr>
+					<td><code>commands/db_check.py</code></td>
+					<td><code>db check</code> / <code>--db-version</code> entry point</td>
+			</tr>
+			<tr>
+					<td><code>commands/db_migrate.py</code></td>
+					<td><code>db migrate</code> entry point</td>
+			</tr>
+	</tbody>
+</table>
+<h2 id="srcexceptionspy"><code>src/exceptions.py</code></h2>
+<p>Custom exception classes for the application.</p>
+<h3 id="classes">Classes</h3>
+<h4 id="configerror"><code>ConfigError</code></h4>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">ConfigError</span>(<span style="color:#a6e22e">Exception</span>):
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;Raised when a configuration file is missing, malformed, or fails validation.&#34;&#34;&#34;</span>
+</span></span></code></pre></div><h4 id="presetnotfounderror"><code>PresetNotFoundError</code></h4>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">PresetNotFoundError</span>(<span style="color:#a6e22e">Exception</span>):
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">__init__</span>(self, name: str, available: list[str]) <span style="color:#f92672">-&gt;</span> <span style="color:#66d9ef">None</span>:
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>name <span style="color:#f92672">=</span> name
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>available <span style="color:#f92672">=</span> available
+</span></span></code></pre></div><h4 id="probeerror"><code>ProbeError</code></h4>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">ProbeError</span>(<span style="color:#a6e22e">Exception</span>):
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">__init__</span>(self, file: str, stderr: str) <span style="color:#f92672">-&gt;</span> <span style="color:#66d9ef">None</span>:
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>file <span style="color:#f92672">=</span> file
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>stderr <span style="color:#f92672">=</span> stderr
+</span></span></code></pre></div><h4 id="pathconfigerror"><code>PathConfigError</code></h4>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">PathConfigError</span>(<span style="color:#a6e22e">Exception</span>):
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;Raised when a path configuration is invalid.&#34;&#34;&#34;</span>
+</span></span></code></pre></div><h4 id="backenderror"><code>BackendError</code></h4>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">BackendError</span>(<span style="color:#a6e22e">Exception</span>):
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">__init__</span>(self, message: str) <span style="color:#f92672">-&gt;</span> <span style="color:#66d9ef">None</span>:
+</span></span><span style="display:flex;"><span>        super()<span style="color:#f92672">.</span><span style="color:#a6e22e">__init__</span>(message)
+</span></span></code></pre></div><h4 id="indexerror"><code>IndexError</code></h4>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">IndexError</span>(<span style="color:#a6e22e">Exception</span>):
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;Raised when the temporary index database cannot be created, opened, or written.&#34;&#34;&#34;</span>
+</span></span></code></pre></div><h2 id="srcmodelstypespy"><code>src/models/types.py</code></h2>
+<p>Pure dataclass and enum types — no I/O operations.</p>
+<h3 id="enums">Enums</h3>
+<h4 id="backend"><code>Backend</code></h4>
+<p>Conversion backend identifiers.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">Backend</span>(str, Enum):
+</span></span><span style="display:flex;"><span>    WINE_DBPOWERAMP <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;wine_dbpoweramp&#34;</span>
+</span></span><span style="display:flex;"><span>    NATIVE_DBPOWERAMP <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;native_dbpoweramp&#34;</span>
+</span></span><span style="display:flex;"><span>    NATIVE_FFMPEG <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;native_ffmpeg&#34;</span>
+</span></span></code></pre></div><h4 id="lossyaction"><code>LossyAction</code></h4>
+<p>Action to take on lossy source files.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">LossyAction</span>(str, Enum):
+</span></span><span style="display:flex;"><span>    LEAVE <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;leave&#34;</span>     <span style="color:#75715e"># Skip lossy files</span>
+</span></span><span style="display:flex;"><span>    COPY <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;copy&#34;</span>       <span style="color:#75715e"># Copy as-is</span>
+</span></span><span style="display:flex;"><span>    CONVERT <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;convert&#34;</span> <span style="color:#75715e"># Transcode</span>
+</span></span></code></pre></div><h3 id="type-aliases">Type aliases</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span>JobType   <span style="color:#f92672">=</span> Literal[<span style="color:#e6db74">&#34;convert&#34;</span>, <span style="color:#e6db74">&#34;copy&#34;</span>, <span style="color:#e6db74">&#34;skip&#34;</span>]
+</span></span><span style="display:flex;"><span>JobStatus <span style="color:#f92672">=</span> Literal[<span style="color:#e6db74">&#34;SUCCESS&#34;</span>, <span style="color:#e6db74">&#34;FAILED&#34;</span>, <span style="color:#e6db74">&#34;SKIPPED&#34;</span>]
+</span></span></code></pre></div><h3 id="constants">Constants</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span>AUDIO_EXTENSIONS: set[str] <span style="color:#f92672">=</span> {<span style="color:#e6db74">&#34;.flac&#34;</span>, <span style="color:#e6db74">&#34;.mp3&#34;</span>, <span style="color:#e6db74">&#34;.m4a&#34;</span>, <span style="color:#e6db74">&#34;.opus&#34;</span>, <span style="color:#e6db74">&#34;.ogg&#34;</span>, <span style="color:#e6db74">&#34;.wav&#34;</span>, <span style="color:#e6db74">&#34;.ape&#34;</span>, <span style="color:#e6db74">&#34;.wv&#34;</span>, <span style="color:#e6db74">&#34;.tta&#34;</span>}
+</span></span></code></pre></div><h3 id="dataclasses">Dataclasses</h3>
+<h4 id="sidecarpolicy"><code>SidecarPolicy</code></h4>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#a6e22e">@dataclass</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">SidecarPolicy</span>:
+</span></span><span style="display:flex;"><span>    copy: bool <span style="color:#f92672">=</span> <span style="color:#66d9ef">False</span>
+</span></span><span style="display:flex;"><span>    extensions: list[str] <span style="color:#f92672">=</span> field(default_factory<span style="color:#f92672">=</span>list)
+</span></span><span style="display:flex;"><span>    hide: bool <span style="color:#f92672">=</span> <span style="color:#66d9ef">False</span>
+</span></span></code></pre></div><h4 id="coverpolicy"><code>CoverPolicy</code></h4>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#a6e22e">@dataclass</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">CoverPolicy</span>:
+</span></span><span style="display:flex;"><span>    copy: bool <span style="color:#f92672">=</span> <span style="color:#66d9ef">False</span>
+</span></span><span style="display:flex;"><span>    patterns: list[str] <span style="color:#f92672">=</span> field(default_factory<span style="color:#f92672">=</span>list)
+</span></span><span style="display:flex;"><span>    hide: bool <span style="color:#f92672">=</span> <span style="color:#66d9ef">False</span>
+</span></span></code></pre></div><h4 id="backendpresetargs"><code>BackendPresetArgs</code></h4>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#a6e22e">@dataclass</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">BackendPresetArgs</span>:
+</span></span><span style="display:flex;"><span>    encoder: Optional[str] <span style="color:#f92672">=</span> <span style="color:#66d9ef">None</span>
+</span></span><span style="display:flex;"><span>    tool: Optional[str] <span style="color:#f92672">=</span> <span style="color:#66d9ef">None</span>
+</span></span><span style="display:flex;"><span>    args: list[str] <span style="color:#f92672">=</span> field(default_factory<span style="color:#f92672">=</span>list)
+</span></span><span style="display:flex;"><span>    requires_encoder: Optional[str] <span style="color:#f92672">=</span> <span style="color:#66d9ef">None</span>
+</span></span></code></pre></div><h4 id="presetconfig"><code>PresetConfig</code></h4>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#a6e22e">@dataclass</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">PresetConfig</span>:
+</span></span><span style="display:flex;"><span>    name: str
+</span></span><span style="display:flex;"><span>    ext: str
+</span></span><span style="display:flex;"><span>    backends: dict[Backend, BackendPresetArgs]
+</span></span><span style="display:flex;"><span>    lyrics: Optional[SidecarPolicy] <span style="color:#f92672">=</span> <span style="color:#66d9ef">None</span>
+</span></span><span style="display:flex;"><span>    covers: Optional[CoverPolicy] <span style="color:#f92672">=</span> <span style="color:#66d9ef">None</span>
+</span></span></code></pre></div><h4 id="conversionjob"><code>ConversionJob</code></h4>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#a6e22e">@dataclass</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">ConversionJob</span>:
+</span></span><span style="display:flex;"><span>    infile: Path
+</span></span><span style="display:flex;"><span>    outfile: Path
+</span></span><span style="display:flex;"><span>    preset: PresetConfig
+</span></span><span style="display:flex;"><span>    job_type: JobType
+</span></span><span style="display:flex;"><span>    is_lossy_source: Optional[bool] <span style="color:#f92672">=</span> <span style="color:#66d9ef">None</span>
+</span></span><span style="display:flex;"><span>    reason: Optional[str] <span style="color:#f92672">=</span> <span style="color:#66d9ef">None</span>
+</span></span></code></pre></div><h4 id="jobresult"><code>JobResult</code></h4>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#a6e22e">@dataclass</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">JobResult</span>:
+</span></span><span style="display:flex;"><span>    job: ConversionJob
+</span></span><span style="display:flex;"><span>    status: JobStatus
+</span></span><span style="display:flex;"><span>    error_msg: Optional[str] <span style="color:#f92672">=</span> <span style="color:#66d9ef">None</span>
+</span></span><span style="display:flex;"><span>    stdout: Optional[str] <span style="color:#f92672">=</span> <span style="color:#66d9ef">None</span>
+</span></span></code></pre></div><h2 id="srcconfig"><code>src/config/</code></h2>
+<h3 id="settings_loaderpy"><code>settings_loader.py</code></h3>
+<p>Loads and validates <code>settings.yaml</code> into typed dataclasses.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">load_settings</span>(path: Path <span style="color:#f92672">|</span> str) <span style="color:#f92672">-&gt;</span> Settings:
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;Parse and validate settings.yaml. Raises ConfigError on any malformed or invalid config.&#34;&#34;&#34;</span>
+</span></span></code></pre></div><h3 id="preset_loaderpy"><code>preset_loader.py</code></h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">load_presets</span>(path: Path <span style="color:#f92672">|</span> str) <span style="color:#f92672">-&gt;</span> dict[str, PresetConfig]:
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;Parse and validate presets.yaml. Raises ConfigError on malformed or invalid config.&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">get_preset</span>(presets: dict[str, PresetConfig], name: str) <span style="color:#f92672">-&gt;</span> PresetConfig:
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;Look up a preset by name. Raises PresetNotFoundError with available names if not found.&#34;&#34;&#34;</span>
+</span></span></code></pre></div><h2 id="srccliargspy"><code>src/cli/args.py</code></h2>
+<p>Command-line argument parsing and validation.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">parse_args</span>(argv: list[str] <span style="color:#f92672">|</span> <span style="color:#66d9ef">None</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">None</span>) <span style="color:#f92672">-&gt;</span> <span style="color:#e6db74">&#34;Namespace&#34;</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;Parse command-line arguments.&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">validate_args</span>(args: <span style="color:#e6db74">&#34;Namespace&#34;</span>) <span style="color:#f92672">-&gt;</span> <span style="color:#66d9ef">None</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;Validate cross-flag rules. Raises SystemExit on validation failure.&#34;&#34;&#34;</span>
+</span></span></code></pre></div><h2 id="srcaudioinspectorpy"><code>src/audio/inspector.py</code></h2>
+<p>Multi-tier lossy detection with cascade from fast to slow.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">is_lossy</span>(file: Path) <span style="color:#f92672">-&gt;</span> bool:
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;Three-tier lossy detection for a single file.&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">probe_many</span>(files: list[Path], workers: int) <span style="color:#f92672">-&gt;</span> dict[Path, bool]:
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;Three-tier lossy detection for a batch of files (blocking).&#34;&#34;&#34;</span>
+</span></span></code></pre></div><h2 id="srcaudiointegritypy"><code>src/audio/integrity.py</code></h2>
+<p>Post-conversion integrity verification. <code>VerifyStatus</code> enum: <code>OK</code>, <code>NOT_OK</code>, <code>UNSUPPORTED</code>. <code>VerifyResult</code> dataclass: <code>status</code>, <code>reason</code>, <code>fmt</code>, <code>duration_s</code>, plus <code>result.short</code> property returning <code>Okay</code> / <code>Not - ...</code> / <code>Skipped - ...</code>. <code>verify_file(path) -&gt; VerifyResult</code> dispatches to the best backend (soundfile → miniaudio → mutagen) at call time.</p>
+<h2 id="srcindexscannerpy"><code>src/index/scanner.py</code></h2>
+<p>File tree scanner with optional progress bar.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">scan_with_progress</span>(
+</span></span><span style="display:flex;"><span>    input_path: Path,
+</span></span><span style="display:flex;"><span>    excludes: list[str],
+</span></span><span style="display:flex;"><span>    preset,
+</span></span><span style="display:flex;"><span>    progress: ProgressSink,
+</span></span><span style="display:flex;"><span>) <span style="color:#f92672">-&gt;</span> tuple[list[IndexRow], dict[Path, str]]:
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;Walk input_path once, collecting file stats and sidecar candidates.&#34;&#34;&#34;</span>
+</span></span></code></pre></div><h2 id="srcindexbuilderpy"><code>src/index/builder.py</code></h2>
+<p>SQLite index database manager.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">IndexBuilder</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">__init__</span>(self, db_path: Path) <span style="color:#f92672">-&gt;</span> <span style="color:#66d9ef">None</span>:
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;&#34;&#34;Open SQLite connection and ensure table exists.&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">add</span>(self, row: IndexRow) <span style="color:#f92672">-&gt;</span> <span style="color:#66d9ef">None</span>:
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;&#34;&#34;Insert a single row into the index.&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">iter_rows</span>(self) <span style="color:#f92672">-&gt;</span> Iterator[IndexRow]:
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;&#34;&#34;Yield all rows in insertion order.&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">commit</span>(self) <span style="color:#f92672">-&gt;</span> <span style="color:#66d9ef">None</span>:
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;&#34;&#34;Commit pending transaction.&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">get_summary</span>(self) <span style="color:#f92672">-&gt;</span> dict[str, int <span style="color:#f92672">|</span> dict[str, int]]:
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;&#34;&#34;Get summary: total, lossy count, counts by job_type.&#34;&#34;&#34;</span>
+</span></span></code></pre></div><h2 id="srcjobsenrichpy"><code>src/jobs/enrich.py</code></h2>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">enrich_index_rows_streaming</span>(
+</span></span><span style="display:flex;"><span>    scan_rows: list[IndexRow],
+</span></span><span style="display:flex;"><span>    input_root: Path,
+</span></span><span style="display:flex;"><span>    source_root: Path <span style="color:#f92672">|</span> <span style="color:#66d9ef">None</span>,
+</span></span><span style="display:flex;"><span>    output_root: Path,
+</span></span><span style="display:flex;"><span>    preset: PresetConfig,
+</span></span><span style="display:flex;"><span>    lossy_action: LossyAction <span style="color:#f92672">|</span> <span style="color:#66d9ef">None</span>,
+</span></span><span style="display:flex;"><span>    no_lossy_check: bool,
+</span></span><span style="display:flex;"><span>    probe_workers: int,
+</span></span><span style="display:flex;"><span>    progress: <span style="color:#e6db74">&#34;ProgressSink&#34;</span>,
+</span></span><span style="display:flex;"><span>    index_builder: IndexBuilder <span style="color:#f92672">|</span> <span style="color:#66d9ef">None</span>,
+</span></span><span style="display:flex;"><span>) <span style="color:#f92672">-&gt;</span> list[Path]:
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;Stream-probe files, write rows to index DB incrementally.&#34;&#34;&#34;</span>
+</span></span></code></pre></div><h2 id="srchistoryconversion_dbpy"><code>src/history/conversion_db.py</code></h2>
+<p>Synchronous wrapper for conversion/copy history.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">ConversionDB</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">__init__</span>(self, db_path: Path) <span style="color:#f92672">-&gt;</span> <span style="color:#66d9ef">None</span>:
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;&#34;&#34;Open the SQLite connection and ensure the history table exists. Auto-runs migrate_to_current() on first open.&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">log_conversion</span>(
+</span></span><span style="display:flex;"><span>        self,
+</span></span><span style="display:flex;"><span>        source: str,
+</span></span><span style="display:flex;"><span>        dest: str,
+</span></span><span style="display:flex;"><span>        job_type: str,
+</span></span><span style="display:flex;"><span>        command: Optional[str],
+</span></span><span style="display:flex;"><span>        status: str,
+</span></span><span style="display:flex;"><span>        error_msg: Optional[str] <span style="color:#f92672">=</span> <span style="color:#66d9ef">None</span>,
+</span></span><span style="display:flex;"><span>        stdout: Optional[str] <span style="color:#f92672">=</span> <span style="color:#66d9ef">None</span>,
+</span></span><span style="display:flex;"><span>        verify_status: Optional[str] <span style="color:#f92672">=</span> <span style="color:#66d9ef">None</span>,
+</span></span><span style="display:flex;"><span>        verify_reason: Optional[str] <span style="color:#f92672">=</span> <span style="color:#66d9ef">None</span>,
+</span></span><span style="display:flex;"><span>        verify_format: Optional[str] <span style="color:#f92672">=</span> <span style="color:#66d9ef">None</span>,
+</span></span><span style="display:flex;"><span>        verify_duration_s: Optional[float] <span style="color:#f92672">=</span> <span style="color:#66d9ef">None</span>,
+</span></span><span style="display:flex;"><span>    ) <span style="color:#f92672">-&gt;</span> <span style="color:#66d9ef">None</span>:
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;&#34;&#34;Insert or update a history row with the current UTC timestamp.&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">should_skip</span>(
+</span></span><span style="display:flex;"><span>        self, source: str, dest: str, job_type: str, dest_file_exists: bool,
+</span></span><span style="display:flex;"><span>        dest_file_size: Optional[int] <span style="color:#f92672">=</span> <span style="color:#66d9ef">None</span>,
+</span></span><span style="display:flex;"><span>    ) <span style="color:#f92672">-&gt;</span> bool:
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;&#34;&#34;Decide whether to skip a job based on history.&#34;&#34;&#34;</span>
+</span></span></code></pre></div><h2 id="srchistorywrite_queuepy"><code>src/history/write_queue.py</code></h2>
+<p>Async writer thread for conversion history.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">DBWriteQueue</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">__init__</span>(self, db_path: Path, worker_model: str <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;thread&#34;</span>) <span style="color:#f92672">-&gt;</span> <span style="color:#66d9ef">None</span>:
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;&#34;&#34;Initialize the writer thread.&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">log_conversion</span>(self, <span style="color:#f92672">...</span>) <span style="color:#f92672">-&gt;</span> <span style="color:#66d9ef">None</span>:
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;&#34;&#34;Queue a conversion log entry for async writing.&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">flush</span>(self) <span style="color:#f92672">-&gt;</span> <span style="color:#66d9ef">None</span>:
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;&#34;&#34;Signal the writer to shut down and wait for it to finish.&#34;&#34;&#34;</span>
+</span></span></code></pre></div><h2 id="srchistorymigrationspy"><code>src/history/migrations.py</code></h2>
+<p>Schema versioning and migration orchestrator. <code>SCHEMA_VERSION = 2</code> (current). <code>MIGRATIONS</code> list maps <code>(from_ver, to_ver, run_once_sql, row_backfill_sql)</code>. <code>migrate_to_current(db_path)</code> runs pending migrations in a single transaction. <code>get_db_version(db_path) -&gt; DbVersionInfo</code> is read-only.</p>
+<h2 id="srcuiprogressprotocolpy"><code>src/ui/progress/protocol.py</code></h2>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">ProgressSink</span>(Protocol):
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">start_phase</span>(self, name: str, total: int) <span style="color:#f92672">-&gt;</span> <span style="color:#66d9ef">None</span>: <span style="color:#f92672">...</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">advance</span>(self, amount: int <span style="color:#f92672">=</span> <span style="color:#ae81ff">1</span>) <span style="color:#f92672">-&gt;</span> <span style="color:#66d9ef">None</span>: <span style="color:#f92672">...</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">start_subtask</span>(self, name: str) <span style="color:#f92672">-&gt;</span> SubtaskID: <span style="color:#f92672">...</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">finish_subtask</span>(self, subtask_id: SubtaskID) <span style="color:#f92672">-&gt;</span> <span style="color:#66d9ef">None</span>: <span style="color:#f92672">...</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">log</span>(self, message: str) <span style="color:#f92672">-&gt;</span> <span style="color:#66d9ef">None</span>: <span style="color:#f92672">...</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">stop</span>(self) <span style="color:#f92672">-&gt;</span> <span style="color:#66d9ef">None</span>: <span style="color:#f92672">...</span>
+</span></span></code></pre></div><h2 id="srcuiprogressrich_sinkpy"><code>src/ui/progress/rich_sink.py</code></h2>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">RichProgressSink</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;Concrete ProgressSink backed by rich.live.Live.&#34;&#34;&#34;</span>
+</span></span></code></pre></div><h2 id="srcpathingresolverpy"><code>src/pathing/resolver.py</code></h2>
+<p>Path resolution and transformation.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">compute_output_path</span>(
+</span></span><span style="display:flex;"><span>    infile: Path,
+</span></span><span style="display:flex;"><span>    input_root: Path,
+</span></span><span style="display:flex;"><span>    source_root: Path <span style="color:#f92672">|</span> <span style="color:#66d9ef">None</span>,
+</span></span><span style="display:flex;"><span>    output_root: Path,
+</span></span><span style="display:flex;"><span>    target_ext: str,
+</span></span><span style="display:flex;"><span>) <span style="color:#f92672">-&gt;</span> Path:
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;Compute the output path for a given input file.&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">to_wine_path</span>(
+</span></span><span style="display:flex;"><span>    linux_path: Path,
+</span></span><span style="display:flex;"><span>    wine_binary: str,
+</span></span><span style="display:flex;"><span>    wine_prefix: str,
+</span></span><span style="display:flex;"><span>    winepath_binary: str,
+</span></span><span style="display:flex;"><span>) <span style="color:#f92672">-&gt;</span> str:
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;Translate a Linux path to Windows path using winepath.&#34;&#34;&#34;</span>
+</span></span></code></pre></div><h2 id="srcsidecarsmanagerpy"><code>src/sidecars/manager.py</code></h2>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">copy_lyrics</span>(
+</span></span><span style="display:flex;"><span>    infile: Path,
+</span></span><span style="display:flex;"><span>    outfile: Path,
+</span></span><span style="display:flex;"><span>    policy: SidecarPolicy <span style="color:#f92672">|</span> <span style="color:#66d9ef">None</span>,
+</span></span><span style="display:flex;"><span>) <span style="color:#f92672">-&gt;</span> list[Path]:
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;Copy lyric/text files next to output.&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">copy_covers</span>(
+</span></span><span style="display:flex;"><span>    infile: Path,
+</span></span><span style="display:flex;"><span>    outfile: Path,
+</span></span><span style="display:flex;"><span>    policy: CoverPolicy <span style="color:#f92672">|</span> <span style="color:#66d9ef">None</span>,
+</span></span><span style="display:flex;"><span>) <span style="color:#f92672">-&gt;</span> list[Path]:
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;Copy cover art files to output directory.&#34;&#34;&#34;</span>
+</span></span></code></pre></div><h2 id="srcbackendsbasepy"><code>src/backends/base.py</code></h2>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">ConversionBackend</span>(ABC):
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">@abstractmethod</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">name</span>(self) <span style="color:#f92672">-&gt;</span> Backend:
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;&#34;&#34;Return the backend identifier.&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">@abstractmethod</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">validate_environment</span>(self) <span style="color:#f92672">-&gt;</span> <span style="color:#66d9ef">None</span>:
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;&#34;&#34;Check that required binaries/paths/prefix exist.&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">@abstractmethod</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">supports</span>(self, preset: PresetConfig) <span style="color:#f92672">-&gt;</span> bool:
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;&#34;&#34;Return True iff preset.backends contains this backend&#39;s key.&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">@abstractmethod</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">run</span>(
+</span></span><span style="display:flex;"><span>        self,
+</span></span><span style="display:flex;"><span>        job: ConversionJob,
+</span></span><span style="display:flex;"><span>        stream_callback: Optional[Callable[[str], <span style="color:#66d9ef">None</span>]],
+</span></span><span style="display:flex;"><span>    ) <span style="color:#f92672">-&gt;</span> JobResult:
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;&#34;&#34;Execute the conversion and return a JobResult.&#34;&#34;&#34;</span>
+</span></span></code></pre></div><h2 id="srcbackendsregistrypy"><code>src/backends/registry.py</code></h2>
+<p>Backend factory with fail-fast validation.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">get_backend</span>(name: Backend, settings: Settings) <span style="color:#f92672">-&gt;</span> ConversionBackend:
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;Instantiate and return the requested ConversionBackend.&#34;&#34;&#34;</span>
+</span></span></code></pre></div>
+</div></main><aside class="shell__right" aria-label="On this page"><div class="toc">
+      <p class="toc__label">On this page</p>
+      <nav id="TableOfContents">
+  <ul>
+    <li><a href="#package-structure">Package structure</a></li>
+    <li><a href="#srcapp"><code>src/app/</code></a>
+      <ul>
+        <li><a href="#contextpy"><code>context.py</code></a></li>
+        <li><a href="#backendpy"><code>backend.py</code></a></li>
+        <li><a href="#lifecyclesignalspy"><code>lifecycle/signals.py</code></a></li>
+        <li><a href="#lifecycletempdirpy"><code>lifecycle/tempdir.py</code></a></li>
+        <li><a href="#lifecyclescan_cachepy"><code>lifecycle/scan_cache.py</code></a></li>
+        <li><a href="#pipelinescanpy"><code>pipeline/scan.py</code></a></li>
+        <li><a href="#pipelineenrichpy"><code>pipeline/enrich.py</code></a></li>
+        <li><a href="#pipelinejobspy"><code>pipeline/jobs.py</code></a></li>
+        <li><a href="#pipelineprefilterpy"><code>pipeline/prefilter.py</code></a></li>
+        <li><a href="#pipelinephasespy"><code>pipeline/phases.py</code></a></li>
+        <li><a href="#pipelineexecutepy"><code>pipeline/execute.py</code></a></li>
+        <li><a href="#pipelinereportingpy"><code>pipeline/reporting.py</code></a></li>
+        <li><a href="#commands"><code>commands/</code></a></li>
+      </ul>
+    </li>
+    <li><a href="#srcexceptionspy"><code>src/exceptions.py</code></a>
+      <ul>
+        <li><a href="#classes">Classes</a></li>
+      </ul>
+    </li>
+    <li><a href="#srcmodelstypespy"><code>src/models/types.py</code></a>
+      <ul>
+        <li><a href="#enums">Enums</a></li>
+        <li><a href="#type-aliases">Type aliases</a></li>
+        <li><a href="#constants">Constants</a></li>
+        <li><a href="#dataclasses">Dataclasses</a></li>
+      </ul>
+    </li>
+    <li><a href="#srcconfig"><code>src/config/</code></a>
+      <ul>
+        <li><a href="#settings_loaderpy"><code>settings_loader.py</code></a></li>
+        <li><a href="#preset_loaderpy"><code>preset_loader.py</code></a></li>
+      </ul>
+    </li>
+    <li><a href="#srccliargspy"><code>src/cli/args.py</code></a></li>
+    <li><a href="#srcaudioinspectorpy"><code>src/audio/inspector.py</code></a></li>
+    <li><a href="#srcaudiointegritypy"><code>src/audio/integrity.py</code></a></li>
+    <li><a href="#srcindexscannerpy"><code>src/index/scanner.py</code></a></li>
+    <li><a href="#srcindexbuilderpy"><code>src/index/builder.py</code></a></li>
+    <li><a href="#srcjobsenrichpy"><code>src/jobs/enrich.py</code></a></li>
+    <li><a href="#srchistoryconversion_dbpy"><code>src/history/conversion_db.py</code></a></li>
+    <li><a href="#srchistorywrite_queuepy"><code>src/history/write_queue.py</code></a></li>
+    <li><a href="#srchistorymigrationspy"><code>src/history/migrations.py</code></a></li>
+    <li><a href="#srcuiprogressprotocolpy"><code>src/ui/progress/protocol.py</code></a></li>
+    <li><a href="#srcuiprogressrich_sinkpy"><code>src/ui/progress/rich_sink.py</code></a></li>
+    <li><a href="#srcpathingresolverpy"><code>src/pathing/resolver.py</code></a></li>
+    <li><a href="#srcsidecarsmanagerpy"><code>src/sidecars/manager.py</code></a></li>
+    <li><a href="#srcbackendsbasepy"><code>src/backends/base.py</code></a></li>
+    <li><a href="#srcbackendsregistrypy"><code>src/backends/registry.py</code></a></li>
+  </ul>
+</nav>
+    </div><label class="version-selector">
+  <span class="version-selector__label">Version</span>
+  <select class="version-selector__select" data-version-select><option value="/wrapper_dbpoweramp/" selected>
+        0.1.0 — 2026-06-28
+      </option></select>
+</label></aside>
+</div><footer class="site-footer">
+  <div class="site-footer__inner">
+    <p>
+      <span class="site-footer__brand">dBpoweramp Wrapper</span>
+      <span class="site-footer__sep">·</span>
+      <a href="https://github.com/5509346169/wrapper_dbpoweramp">Source on GitHub</a>
+    </p>
+    <p class="site-footer__tagline">Audiophile-grade audio conversion, on your terms.</p>
+  </div>
+</footer>
+<div class="cmdk" data-cmdk hidden role="dialog" aria-modal="true" aria-label="Search">
+  <div class="cmdk__backdrop" data-cmdk-close></div>
+  <div class="cmdk__panel">
+    <input type="search" class="cmdk__input"
+           data-cmdk-input
+           placeholder="Search docs…  (press Esc to close)"
+           autocomplete="off"
+           spellcheck="false">
+    <ul class="cmdk__results" data-cmdk-results></ul>
+    <p class="cmdk__hint">
+      <kbd>↑</kbd><kbd>↓</kbd> to navigate, <kbd>↵</kbd> to open, <kbd>Esc</kbd> to close.
+    </p>
+  </div>
+</div>
+<script>
+    (function () {
+      try {
+        var stored = localStorage.getItem("theme");
+        var prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+        var theme = stored || (prefersDark ? "dark" : "light");
+        document.documentElement.setAttribute("data-theme", theme);
+      } catch (_) {   }
+    })();
+  </script>
+</body>
+</html>

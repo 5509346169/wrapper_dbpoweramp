@@ -1,8 +1,0 @@
-# Release versions for the version-selector component.
-# Update when a new release is tagged.
-
-- version: "0.1.0"
-  date: "2026-06-28"
-  current: true
-  url: /wrapper_dbpoweramp/
-  notes: Initial docs site rewrite (Jekyll + audiophile theme).

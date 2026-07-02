@@ -1,0 +1,87 @@
+# Hub-and-spoke navigation tree for the Hugo site.
+# Consumed by layouts/partials/sidebar.html via .Site.Sections.
+
+- title: Getting Started
+  section: getting-started
+  order: 10
+  entries:
+    - title: Overview
+      slug: overview
+      path: overview/
+      weight: 20
+    - title: Installation
+      slug: installation
+      path: getting-started/installation/
+      weight: 10
+
+- title: Configuration
+  section: configuration
+  order: 20
+  entries:
+    - title: settings.yaml
+      slug: configuration
+      path: configuration/
+      weight: 10
+    - title: Command-Line Interface
+      slug: cli
+      path: configuration/cli/
+      weight: 20
+    - title: Presets
+      slug: presets
+      path: configuration/presets/
+      weight: 30
+
+- title: Architecture
+  section: architecture
+  order: 30
+  entries:
+    - title: Architecture
+      slug: architecture
+      path: architecture/
+      weight: 10
+    - title: Workflow
+      slug: workflow
+      path: architecture/workflow/
+      weight: 20
+    - title: Backends
+      slug: backends
+      path: architecture/backends/
+      weight: 30
+
+- title: Engineering
+  section: engineering
+  order: 40
+  entries:
+    - title: File Index System
+      slug: file-index
+      path: engineering/file-index/
+      weight: 10
+    - title: Lossy Source Handling
+      slug: lossy-handling
+      path: engineering/lossy-handling/
+      weight: 20
+    - title: Sidecar Files
+      slug: sidecar-files
+      path: engineering/sidecar-files/
+      weight: 30
+    - title: Error Handling
+      slug: error-handling
+      path: engineering/error-handling/
+      weight: 40
+    - title: Testing
+      slug: testing
+      path: engineering/testing/
+      weight: 50
+
+- title: Reference
+  section: reference
+  order: 50
+  entries:
+    - title: Public API
+      slug: api
+      path: reference/api/
+      weight: 10
+    - title: Modules
+      slug: modules
+      path: reference/modules/
+      weight: 20

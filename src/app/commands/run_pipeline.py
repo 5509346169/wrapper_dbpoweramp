@@ -17,6 +17,7 @@ def run(ctx: "AppContext") -> int:
     from src.app.lifecycle.signals import install_signal_guard
     from src.app.lifecycle.tempdir import cleanup_index, cleanup_staging_workspace, setup_temp_dir
     from src.app.lifecycle.scan_cache import close_scan_cache
+    from src.app.lifecycle.staging_cache import close_staging_cache
     from src.app.pipeline.enrich import enrich
     from src.app.pipeline.execute import execute_phases
     from src.app.pipeline.jobs import build_jobs, check_lossy_gate
@@ -92,7 +93,7 @@ def run(ctx: "AppContext") -> int:
             source_rows = enriched_rows
 
         # ── Build jobs ───────────────────────────────────────────────────────
-        jobs = build_jobs(source_rows, ctx)
+        jobs = build_jobs(source_rows, ctx, staging_cache=scan_result.staging_cache)
 
         # ── Lossy gate ──────────────────────────────────────────────────────
         if lossy_files_found:
@@ -135,6 +136,7 @@ def run(ctx: "AppContext") -> int:
 
         # ── Cleanup ───────────────────────────────────────────────────────────
         close_scan_cache(scan_result.scan_cache)
+        close_staging_cache(scan_result.staging_cache)
 
         cleanup_index(
             db_path=index_db_path,

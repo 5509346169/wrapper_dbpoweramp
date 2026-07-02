@@ -262,6 +262,25 @@ def _add_execution_args(parser: "ArgumentParser") -> None:
         default=None,
         help="Disable tmp staging (overrides settings.yaml).",
     )
+    # --md5-staging controls the md5sum-named staging mode for native dbPoweramp.
+    # 'auto' (default): fire when source/dest has non-ASCII name OR path > 240 chars.
+    # 'on': always use md5sum-named staging (slower but safest).
+    # 'off': disable md5sum naming (paths still go through staging for long-path
+    #        case if --tmp-staging is on, but using the old <hash>__<basename> form).
+    parser.add_argument(
+        "--md5-staging",
+        choices=["auto", "on", "off"],
+        default="auto",
+        metavar="MODE",
+        dest="md5_staging",
+        help=(
+            "md5sum-named temp staging mode for native dbPoweramp (default: auto). "
+            "'auto': stage when source/dest has non-ASCII chars OR path > 240 chars. "
+            "'on': always stage with md5sum name. "
+            "'off': disable md5sum naming (paths still stage for MAX_PATH if "
+            "--tmp-staging is on, using the <hash>__<basename> form)."
+        ),
+    )
 
 
 def _add_mode_args(parser: "ArgumentParser") -> None:

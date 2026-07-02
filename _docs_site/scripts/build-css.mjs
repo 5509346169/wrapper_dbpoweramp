@@ -6,7 +6,7 @@
 // config (`sass: { style: :expanded }`).
 //
 // Usage: node scripts/build-css.mjs
-// Output: assets/css/main.css
+// Output: static/css/main.css
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -16,9 +16,9 @@ import * as sass from "sass";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, "..");
 
-const entry = resolve(root, "assets/css/main.scss");
-const out = resolve(root, "assets/css/main.css");
-const loadPaths = [resolve(root, "_sass")];
+const entry = resolve(root, "themes/hugo-audiophile/assets/scss/main.scss");
+const out = resolve(root, "static/css/main.css");
+const loadPaths = [resolve(root, "themes/hugo-audiophile/assets/scss")];
 
 mkdirSync(dirname(out), { recursive: true });
 

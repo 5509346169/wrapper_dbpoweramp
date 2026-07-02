@@ -51,80 +51,95 @@ def execute_phases(
     # honor it.
     owns_sink = sink is None
 
-    if ctx.verbose:
-        sink_for_run: "ProgressSink"
-        if sink is None:
-            sink_for_run = NullProgressSink()
-            sink = sink_for_run
+    # Single accumulator shared by both branches so an empty ``phases`` list
+    # (e.g. every job pre-filtered as already-converted) still produces a
+    # well-formed summary instead of an UnboundLocalError.
+    phase_summary: dict[str, int] = {"success": 0, "skipped": 0, "failed": 0}
+
+    try:
+        if ctx.verbose:
+            sink_for_run: "ProgressSink"
+            if sink is None:
+                sink_for_run = NullProgressSink()
+                sink = sink_for_run
+            else:
+                sink_for_run = sink
+            if prefilter_skips:
+                print(f"[Skipping] {len(prefilter_skips)} already-converted file(s)")
+            for phase_label, batch in phases:
+                print(f"Phase — {phase_label} ({len(batch)} file(s))")
+            if phases:
+                flat_jobs = [j for _, batch in phases for j in batch]
+                run_summary, _, _, write_queue = run_all(
+                    jobs=flat_jobs,
+                    backend=ctx.backend,
+                    db_path=str(ctx.db_path),
+                    force=ctx.args.force,
+                    workers=ctx.workers,
+                    worker_model=ctx.worker_model,
+                    verbose=ctx.verbose,
+                    progress=sink_for_run,
+                    print_to_terminal=ctx.verbose,
+                    retry_failed=ctx.failed_only,
+                    md5_staging=ctx.md5_staging,
+                )
+                for k in phase_summary:
+                    phase_summary[k] += run_summary.get(k, 0)
+            summary = phase_summary
         else:
-            sink_for_run = sink
-        progress_active = False
-        if prefilter_skips:
-            print(f"[Skipping] {len(prefilter_skips)} already-converted file(s)")
-        for phase_label, batch in phases:
-            print(f"Phase — {phase_label} ({len(batch)} file(s))")
-        if phases:
-            flat_jobs = [j for _, batch in phases for j in batch]
-            phase_summary, _, _, write_queue = run_all(
-                jobs=flat_jobs,
-                backend=ctx.backend,
-                db_path=str(ctx.db_path),
-                force=ctx.args.force,
-                workers=ctx.workers,
-                worker_model=ctx.worker_model,
-                verbose=ctx.verbose,
-                progress=sink_for_run,
-                print_to_terminal=ctx.verbose,
-                retry_failed=ctx.failed_only,
-            )
-        else:
-            write_queue = DBWriteQueue(ctx.db_path, ctx.worker_model)
-        summary = phase_summary
-    else:
-        if sink is None:
-            sink = RichProgressSink(total_bytes=total_bytes)
-        if prefilter_skips:
-            # Start the Skipping phase to flush the prefilter's skip list,
-            # then close it cleanly. The summary line ("Skipped N …") is
-            # emitted as a regular stdout line — printing through the sink
-            # here would land in the *next* phase's log area after
-            # ``stop_phase`` clears the buffer, which would look like the
-            # summary belongs to whichever phase comes next.
-            sink.start_phase("Skipping", total=len(prefilter_skips))
-            for job in prefilter_skips:
-                sink.advance()
-                sink.log_file(f"  {job.infile.name}")
-            sink.stop_phase()
-            print(f"  Skipped {len(prefilter_skips)} already-converted file(s)")
-        phase_summary: dict[str, int] = {"success": 0, "skipped": 0, "failed": 0}
-        write_queue = None
-        for phase_label, batch in phases:
-            sink.start_phase(phase_label, total=len(batch))
-            if not batch:
+            if sink is None:
+                sink = RichProgressSink(total_bytes=total_bytes)
+            if prefilter_skips:
+                # Start the Skipping phase to flush the prefilter's skip list,
+                # then close it cleanly. The summary line ("Skipped N …") is
+                # emitted as a regular stdout line — printing through the sink
+                # here would land in the *next* phase's log area after
+                # ``stop_phase`` clears the buffer, which would look like the
+                # summary belongs to whichever phase comes next.
+                sink.start_phase("Skipping", total=len(prefilter_skips))
+                for job in prefilter_skips:
+                    sink.advance()
+                    sink.log_file(f"  {job.infile.name}")
                 sink.stop_phase()
-                continue
-            conv_summary, futures, events, write_queue = run_all(
-                jobs=batch,
-                backend=ctx.backend,
-                db_path=str(ctx.db_path),
-                force=ctx.args.force,
-                workers=ctx.workers,
-                worker_model=ctx.worker_model,
-                verbose=ctx.verbose,
-                progress=sink,
-                print_to_terminal=ctx.verbose,
-                retry_failed=ctx.failed_only,
-            )
-            for k in phase_summary:
-                phase_summary[k] += conv_summary.get(k, 0)
-            sink.stop_phase()
-        summary = phase_summary
+                print(f"  Skipped {len(prefilter_skips)} already-converted file(s)")
+            write_queue = None
+            for phase_label, batch in phases:
+                sink.start_phase(phase_label, total=len(batch))
+                if not batch:
+                    sink.stop_phase()
+                    continue
+                conv_summary, futures, events, write_queue = run_all(
+                    jobs=batch,
+                    backend=ctx.backend,
+                    db_path=str(ctx.db_path),
+                    force=ctx.args.force,
+                    workers=ctx.workers,
+                    worker_model=ctx.worker_model,
+                    verbose=ctx.verbose,
+                    progress=sink,
+                    print_to_terminal=ctx.verbose,
+                    retry_failed=ctx.failed_only,
+                    md5_staging=ctx.md5_staging,
+                )
+                for k in phase_summary:
+                    phase_summary[k] += conv_summary.get(k, 0)
+                sink.stop_phase()
+            summary = phase_summary
+    finally:
+        # Always tear down the sink and writer thread, even if a downstream
+        # call (e.g. ``run_all``) raised mid-flight. Without this, a daemon
+        # writer thread can outlive the main program and trigger a buffered
+        # stderr lock error at interpreter shutdown.
+        if owns_sink and not ctx.verbose:
+            sink.stop()  # type: ignore[union-attr]
 
-    if owns_sink and not ctx.verbose:
-        sink.stop()  # type: ignore[union-attr]
-
-    if write_queue is not None:
-        write_queue.flush()
+        if write_queue is not None:
+            try:
+                write_queue.flush()
+            except Exception:
+                # The writer thread should never raise, but guard anyway so a
+                # broken SQLite handle can't mask the original traceback.
+                pass
 
     # Add pre-filtered skips to the summary
     summary["skipped"] += len(prefilter_skips)

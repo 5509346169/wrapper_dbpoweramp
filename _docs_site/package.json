@@ -2,18 +2,18 @@
   "name": "wrapper-dbpoweramp-docs",
   "version": "0.1.0",
   "private": true,
-  "description": "Documentation site for dBpoweramp Wrapper (Jekyll + locally bundled vendor).",
+  "description": "Documentation site for dBpoweramp Wrapper (Hugo + locally bundled vendor).",
   "license": "MIT",
   "scripts": {
     "vendor": "node scripts/vendor-build.mjs",
     "css": "node scripts/build-css.mjs",
-    "check:cdn": "node scripts/check-no-cdn.mjs site",
-    "deploy": "cpx \"_site/**/*\" \"site/\"",
-    "clean": "rimraf site .jekyll-cache .jekyll-metadata assets/css/main.css"
+    "check:cdn": "node scripts/check-no-cdn.mjs public",
+    "clean": "rimraf public static/css assets/css/main.css"
   },
   "dependencies": {
+    "@viz-js/viz": "3.3.1",
     "esbuild": "0.20.2",
-    "cpx2": "7.0.1"
+    "mermaid": "11.4.1"
   },
   "devDependencies": {
     "rimraf": "5.0.5",

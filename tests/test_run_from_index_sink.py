@@ -332,3 +332,125 @@ class TestRichSinkConstructible:
             sink.stop_phase()
         finally:
             sink.stop()
+
+
+# ---------------------------------------------------------------------------
+# Regression: --verbose + all jobs pre-filtered → UnboundLocalError
+# ---------------------------------------------------------------------------
+
+
+class TestExecutePhasesEmptyPhasesRegression:
+    """Regression coverage for the UnboundLocalError raised when every job in
+    ``run_from_index.run`` is pre-filtered (already-converted) AND verbose mode
+    is enabled. With phased execution and no pending jobs, ``run_jobs_by_phase``
+    returns an empty list — the verbose branch used to assign ``phase_summary``
+    only inside the ``if phases:`` block, so the subsequent
+    ``summary = phase_summary`` raised::
+
+        UnboundLocalError: cannot access local variable 'phase_summary'
+        where it is not associated with a value
+
+    The fix initialises ``phase_summary`` once at the top of ``execute_phases``
+    and accumulates into it from both branches.
+    """
+
+    def _ctx(self, verbose: bool) -> MagicMock:
+        """Build a minimal MagicMock ctx that satisfies the execute_phases path."""
+        args = MagicMock()
+        args.force = False
+        args.lossy_action = None
+        args.no_lossy_check = True
+        ctx = MagicMock()
+        ctx.args = args
+        ctx.db_path = Path("/tmp/history.db")
+        ctx.backend = MagicMock()
+        ctx.workers = 1
+        ctx.worker_model = "thread"
+        ctx.verbose = verbose
+        return ctx
+
+    def test_verbose_empty_phases_returns_clean_summary(self) -> None:
+        """``execute_phases(..., verbose=True, phases=[])`` must return a
+        well-formed summary dict and never raise ``UnboundLocalError``."""
+        from src.app.pipeline.execute import execute_phases
+
+        ctx = self._ctx(verbose=True)
+        external_sink = MagicMock()
+
+        phase_state = MutablePhaseState()
+        phase_state.prefilter_skips = [MagicMock(), MagicMock()]  # 2 pre-filtered
+
+        summary, write_queue = execute_phases(
+            phases=[],  # every job already-converted → no phases remain
+            ctx=ctx,
+            phase_state=phase_state,
+            sink=external_sink,
+        )
+
+        # Empty run + 2 pre-filtered skips → summary reflects the skips only.
+        assert summary == {"success": 0, "skipped": 2, "failed": 0}
+        # No jobs ran → no write_queue is constructed.
+        assert write_queue is None
+        # External sink must NOT have .stop() called on it (caller owns it).
+        assert not external_sink.stop.called
+
+    def test_verbose_empty_phases_does_not_call_run_all(self) -> None:
+        """When ``phases`` is empty we must not invoke ``run_all`` at all —
+        the original bug path constructed a useless ``DBWriteQueue`` here."""
+        from src.app.pipeline.execute import execute_phases
+
+        ctx = self._ctx(verbose=True)
+        external_sink = MagicMock()
+
+        phase_state = MutablePhaseState()
+        phase_state.prefilter_skips = []
+
+        with patch("src.app.pipeline.execute.run_all") as mock_run_all:
+            summary, write_queue = execute_phases(
+                phases=[],
+                ctx=ctx,
+                phase_state=phase_state,
+                sink=external_sink,
+            )
+
+        assert mock_run_all.call_count == 0, (
+            "execute_phases must not invoke run_all when phases is empty"
+        )
+        assert summary == {"success": 0, "skipped": 0, "failed": 0}
+        assert write_queue is None
+
+    def test_verbose_non_empty_phases_runs_once_with_flat_jobs(self) -> None:
+        """Verbose branch flattens all phase batches into a single ``run_all``
+        call and copies the resulting summary into ``phase_summary``."""
+        from src.app.pipeline.execute import execute_phases
+
+        ctx = self._ctx(verbose=True)
+        external_sink = MagicMock()
+
+        phase_state = MutablePhaseState()
+        phase_state.prefilter_skips = []
+
+        with patch("src.app.pipeline.execute.run_all") as mock_run_all:
+            mock_run_all.return_value = (
+                {"success": 7, "skipped": 2, "failed": 1},
+                [],
+                None,
+                MagicMock(),
+            )
+            summary, _ = execute_phases(
+                phases=[
+                    ("Copying", [MagicMock(), MagicMock()]),
+                    ("Converting", [MagicMock()]),
+                ],
+                ctx=ctx,
+                phase_state=phase_state,
+                sink=external_sink,
+            )
+
+        # Verbose branch always flattens to a single run_all call.
+        assert mock_run_all.call_count == 1
+        # And that summary flows straight through.
+        assert summary == {"success": 7, "skipped": 2, "failed": 1}
+        # Both phase batches were flattened into the single call.
+        flat_jobs = mock_run_all.call_args.kwargs["jobs"]
+        assert len(flat_jobs) == 3

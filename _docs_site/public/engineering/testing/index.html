@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light"><script src="/wrapper_dbpoweramp/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=wrapper_dbpoweramp/livereload" data-no-instant defer></script><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f6f4ee" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f1216" media="(prefers-color-scheme: dark)">
+
+<title>Testing — dBpoweramp Wrapper</title>
+<meta name="description" content="How to run the test suite and the TDD workflow.">
+
+<link rel="canonical" href="http://localhost:1313/wrapper_dbpoweramp/engineering/testing/">
+
+
+<link rel="preload" as="font" type="font/woff2" href="/assets/fonts/bodoni-moda-var.woff2" crossorigin>
+<link rel="preload" as="font" type="font/woff2" href="/assets/fonts/geist-var.woff2" crossorigin>
+<link rel="preload" as="font" type="font/woff2" href="/assets/fonts/jetbrains-mono-var.woff2" crossorigin>
+
+<link rel="stylesheet" href="/css/main.css">
+
+<script type="module" src="/assets/vendor/theme.js" defer></script>
+<script type="module" src="/assets/vendor/waveform.js" defer></script>
+<script type="module" src="/assets/vendor/search-palette.js" defer></script>
+<script type="module" src="/assets/vendor/diagrams.js" defer></script>
+<body class="theme-shell">
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div class="shell"><header class="shell__header">
+  <div class="header__inner">
+    <a class="header__brand" href="/">
+      <span class="header__mark">dB</span>
+      <span class="header__wordmark">dBpoweramp Wrapper</span>
+    </a>
+
+    <nav class="header__nav" aria-label="Sections"><a class="header__nav-item"
+           href="/wrapper_dbpoweramp/architecture/">
+          Architecture
+        </a><a class="header__nav-item"
+           href="/wrapper_dbpoweramp/configuration/">
+          settings.yaml Reference
+        </a><a class="header__nav-item"
+           href="/wrapper_dbpoweramp/overview/">
+          Overview
+        </a><a class="header__nav-item is-active"
+           href="/wrapper_dbpoweramp/engineering/">
+          Engineerings
+        </a><a class="header__nav-item"
+           href="/wrapper_dbpoweramp/getting-started/">
+          Getting-Starteds
+        </a><a class="header__nav-item"
+           href="/wrapper_dbpoweramp/reference/">
+          References
+        </a></nav>
+
+    <div class="header__actions">
+      <button class="header__cmd" type="button"
+              data-cmdk-open
+              aria-label="Open command palette (Ctrl/Cmd-K)">
+        <kbd>Ctrl</kbd><kbd>K</kbd>
+      </button>
+      <button class="header__theme" type="button"
+              data-theme-toggle
+              aria-label="Toggle dark mode">
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" fill="currentColor"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+</header>
+<aside class="shell__left sidebar" aria-label="Section navigation"><details class="sidebar__group">
+      <summary class="sidebar__group-label">Architecture</summary>
+      <ul class="sidebar__list"><li>
+            <a class="sidebar__item"
+               href="/wrapper_dbpoweramp/architecture/workflow/">
+              Workflow
+            </a>
+          </li><li>
+            <a class="sidebar__item"
+               href="/wrapper_dbpoweramp/architecture/backends/">
+              Backends Reference
+            </a>
+          </li></ul>
+    </details><details class="sidebar__group">
+      <summary class="sidebar__group-label">settings.yaml Reference</summary>
+      <ul class="sidebar__list"><li>
+            <a class="sidebar__item"
+               href="/wrapper_dbpoweramp/configuration/cli/">
+              Command-Line Interface
+            </a>
+          </li><li>
+            <a class="sidebar__item"
+               href="/wrapper_dbpoweramp/configuration/presets/">
+              Presets Reference
+            </a>
+          </li></ul>
+    </details><details class="sidebar__group">
+      <summary class="sidebar__group-label">Overview</summary>
+      <ul class="sidebar__list"></ul>
+    </details><details class="sidebar__group open">
+      <summary class="sidebar__group-label">Engineerings</summary>
+      <ul class="sidebar__list"><li>
+            <a class="sidebar__item"
+               href="/wrapper_dbpoweramp/engineering/file-index/">
+              File Index System
+            </a>
+          </li><li>
+            <a class="sidebar__item"
+               href="/wrapper_dbpoweramp/engineering/lossy-handling/">
+              Lossy Source Handling
+            </a>
+          </li><li>
+            <a class="sidebar__item"
+               href="/wrapper_dbpoweramp/engineering/sidecar-files/">
+              Sidecar Files
+            </a>
+          </li><li>
+            <a class="sidebar__item"
+               href="/wrapper_dbpoweramp/engineering/error-handling/">
+              Error Handling
+            </a>
+          </li><li>
+            <a class="sidebar__item is-active"
+               href="/wrapper_dbpoweramp/engineering/testing/">
+              Testing
+            </a>
+          </li></ul>
+    </details><details class="sidebar__group">
+      <summary class="sidebar__group-label">Getting-Starteds</summary>
+      <ul class="sidebar__list"><li>
+            <a class="sidebar__item"
+               href="/wrapper_dbpoweramp/getting-started/installation/">
+              Installation
+            </a>
+          </li></ul>
+    </details><details class="sidebar__group">
+      <summary class="sidebar__group-label">References</summary>
+      <ul class="sidebar__list"><li>
+            <a class="sidebar__item"
+               href="/wrapper_dbpoweramp/reference/api/">
+              Public API Reference
+            </a>
+          </li><li>
+            <a class="sidebar__item"
+               href="/wrapper_dbpoweramp/reference/modules/">
+              Module Reference
+            </a>
+          </li></ul>
+    </details></aside>
+<main id="main" class="shell__main"><div class="prose">
+  <p>This document explains how to run the test suite.</p>
+<h2 id="overview">Overview</h2>
+<p>The project includes a test suite covering:</p>
+<ul>
+<li>Lossy classification logic</li>
+<li>Conversion database operations</li>
+<li>Index builder operations</li>
+<li>Mutagen probe behaviour</li>
+<li>Progress view rendering</li>
+</ul>
+<h2 id="running-tests">Running tests</h2>
+<h3 id="basic-test-run">Basic test run</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-sh" data-lang="sh"><span style="display:flex;"><span>pytest tests/
+</span></span><span style="display:flex;"><span>python -m pytest tests/
+</span></span></code></pre></div><h3 id="run-specific-test-file">Run specific test file</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-sh" data-lang="sh"><span style="display:flex;"><span>pytest tests/test_lossy_classify.py
+</span></span><span style="display:flex;"><span>pytest tests/test_conversion_db.py
+</span></span><span style="display:flex;"><span>pytest tests/test_index_builder.py
+</span></span></code></pre></div><h3 id="run-specific-test-class">Run specific test class</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-sh" data-lang="sh"><span style="display:flex;"><span>pytest tests/test_lossy_classify.py::TestClassify
+</span></span><span style="display:flex;"><span>pytest tests/test_lossy_classify.py::TestEnrichIndexRows
+</span></span></code></pre></div><h3 id="run-specific-test">Run specific test</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-sh" data-lang="sh"><span style="display:flex;"><span>pytest tests/test_lossy_classify.py::TestClassify::test_lossy_val_true_action_copy_sets_copy
+</span></span></code></pre></div><h2 id="test-files">Test files</h2>
+<h3 id="testsconftestpy"><code>tests/conftest.py</code></h3>
+<p>Pytest configuration that pre-imports mutagen to break import-lock deadlock on Windows.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># Pre-import mutagen to release the import lock before workers are spawned</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">import</span> mutagen
+</span></span></code></pre></div><h3 id="teststest_lossy_classifypy"><code>tests/test_lossy_classify.py</code></h3>
+<p>Tests for lossy classification and job enrichment.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">TestClassify</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;Tests for _classify covering all LossyAction values and no_lossy_check.&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">test_no_lossy_check_sets_job_type_convert</span>(self)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">test_lossy_val_true_no_action_sets_skip</span>(self)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">test_lossy_val_true_action_leave_sets_skip</span>(self)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">test_lossy_val_true_action_copy_sets_copy</span>(self)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">test_lossy_val_true_action_convert_sets_convert</span>(self)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">test_lossy_val_false_sets_convert</span>(self)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">TestEnrichIndexRows</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;Blocking tests for enrich_index_rows.&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">test_no_lossy_check_skips_probe</span>(self)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">test_lossy_file_returned_in_result</span>(self)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">test_lossless_file_job_type_convert</span>(self)
+</span></span></code></pre></div><h3 id="teststest_conversion_dbpy"><code>tests/test_conversion_db.py</code></h3>
+<p>Tests for the history database.</p>
+<ul>
+<li>Tests logging conversions</li>
+<li>Tests resume check logic</li>
+<li>Tests database isolation</li>
+</ul>
+<h3 id="teststest_index_builderpy"><code>tests/test_index_builder.py</code></h3>
+<p>Tests for the index builder.</p>
+<ul>
+<li>Tests row insertion</li>
+<li>Tests iteration</li>
+<li>Tests summary statistics</li>
+<li>Tests schema migration</li>
+</ul>
+<h3 id="teststest_mutagen_probepy"><code>tests/test_mutagen_probe.py</code></h3>
+<p>Tests for mutagen audio probing.</p>
+<ul>
+<li>Tests lossy detection by codec</li>
+<li>Tests ambiguous extension handling</li>
+<li>Tests error handling</li>
+</ul>
+<h3 id="teststest_progress_viewpy"><code>tests/test_progress_view.py</code></h3>
+<p>Tests for the Rich progress view.</p>
+<ul>
+<li>Tests progress bar rendering</li>
+<li>Tests subtask management</li>
+<li>Tests log line display</li>
+</ul>
+<h2 id="test-fixtures">Test fixtures</h2>
+<p>Tests use pytest fixtures from <code>conftest.py</code>:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#a6e22e">@pytest.fixture</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">temp_db</span>(tmp_path):
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;Provide a temporary database path.&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> tmp_path <span style="color:#f92672">/</span> <span style="color:#e6db74">&#34;test.db&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">@pytest.fixture</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">sample_audio_file</span>():
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;Provide a sample audio file path for testing.&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># Returns path to test fixture</span>
+</span></span></code></pre></div><h2 id="mocking">Mocking</h2>
+<p>Tests use mocking to isolate units under test:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">from</span> unittest.mock <span style="color:#f92672">import</span> patch, Mock
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">@patch</span>(<span style="color:#e6db74">&#34;src.audio.inspector.probe_many&#34;</span>)
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">@patch</span>(<span style="color:#e6db74">&#34;src.jobs.builder.compute_output_path&#34;</span>)
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">test_no_lossy_check_skips_probe</span>(
+</span></span><span style="display:flex;"><span>    self,
+</span></span><span style="display:flex;"><span>    mock_compute: object,
+</span></span><span style="display:flex;"><span>    mock_probe_many: object
+</span></span><span style="display:flex;"><span>) <span style="color:#f92672">-&gt;</span> <span style="color:#66d9ef">None</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;no_lossy_check=True skips probe_many entirely.&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>    mock_compute<span style="color:#f92672">.</span>return_value <span style="color:#f92672">=</span> Path(<span style="color:#e6db74">&#34;D:/output/test.mp3&#34;</span>)
+</span></span><span style="display:flex;"><span>    mock_probe_many<span style="color:#f92672">.</span>return_value <span style="color:#f92672">=</span> {Path(<span style="color:#e6db74">&#34;D:/music/test.mp3&#34;</span>): <span style="color:#66d9ef">True</span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># Test code...</span>
+</span></span></code></pre></div><h2 id="coverage">Coverage</h2>
+<p>To check test coverage:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-sh" data-lang="sh"><span style="display:flex;"><span>pip install pytest-cov
+</span></span><span style="display:flex;"><span>pytest tests/ --cov<span style="color:#f92672">=</span>src --cov-report<span style="color:#f92672">=</span>html
+</span></span><span style="display:flex;"><span>open htmlcov/index.html
+</span></span></code></pre></div><h2 id="continuous-integration">Continuous integration</h2>
+<p>Tests run automatically on:</p>
+<ul>
+<li>Pull requests</li>
+<li>Push to main branch</li>
+</ul>
+<p>The CI configuration lives in <code>.github/workflows/</code> and runs the same <code>pytest tests/</code> command on every change.</p>
+<h2 id="writing-tests">Writing tests</h2>
+<h3 id="test-naming">Test naming</h3>
+<p>Follow the pattern <code>test_&lt;feature&gt;_&lt;scenario&gt;</code>:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">test_lossy_action_copy_sets_job_type_copy</span>(self):
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;is_lossy=True with LossyAction.COPY sets job_type to &#39;copy&#39;.&#34;&#34;&#34;</span>
+</span></span></code></pre></div><h3 id="test-structure">Test structure</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">TestFeatureName</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;Description of the feature being tested.&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">setup_method</span>(self):
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;&#34;&#34;Set up test fixtures.&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>fixtures <span style="color:#f92672">=</span> setup()
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">teardown_method</span>(self):
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;&#34;&#34;Clean up after each test.&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>        cleanup()
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">test_scenario_description</span>(self):
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;&#34;&#34;Expected behavior in this scenario.&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e"># Arrange</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">...</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e"># Act</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">...</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e"># Assert</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">assert</span> result <span style="color:#f92672">==</span> expected
+</span></span></code></pre></div><h3 id="test-documentation">Test documentation</h3>
+<p>Each test should have a docstring explaining:</p>
+<ol>
+<li>What is being tested</li>
+<li>The scenario</li>
+<li>The expected behaviour</li>
+</ol>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">test_no_lossy_check_sets_job_type_convert</span>(self, mock_compute: object) <span style="color:#f92672">-&gt;</span> <span style="color:#66d9ef">None</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;no_lossy_check=True always sets job_type to &#39;convert&#39;.
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    When lossy checking is disabled, all files should be treated
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    as candidates for conversion regardless of their actual codec.
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    &#34;&#34;&#34;</span>
+</span></span></code></pre></div><h2 id="test-data">Test data</h2>
+<h3 id="audio-fixtures">Audio fixtures</h3>
+<p>Place sample audio files in <code>tests/fixtures/</code>:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>tests/
+</span></span><span style="display:flex;"><span>├── fixtures/
+</span></span><span style="display:flex;"><span>│   ├── sample.flac
+</span></span><span style="display:flex;"><span>│   ├── sample.mp3
+</span></span><span style="display:flex;"><span>│   └── sample.m4a
+</span></span><span style="display:flex;"><span>└── conftest.py
+</span></span></code></pre></div><h3 id="database-fixtures">Database fixtures</h3>
+<p>Tests use temporary directories for database files:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">test_with_temp_db</span>(tmp_path):
+</span></span><span style="display:flex;"><span>    db_path <span style="color:#f92672">=</span> tmp_path <span style="color:#f92672">/</span> <span style="color:#e6db74">&#34;test.db&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># Test code...</span>
+</span></span></code></pre></div><h2 id="performance-testing">Performance testing</h2>
+<p>For large file tests, use <code>pytest.mark.slow</code>:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#a6e22e">@pytest.mark.slow</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">test_large_library_probing</span>():
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;Test probing with thousands of files.&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># Performance test code...</span>
+</span></span></code></pre></div><p>Run slow tests separately:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-sh" data-lang="sh"><span style="display:flex;"><span>pytest tests/ -m <span style="color:#e6db74">&#34;not slow&#34;</span>
+</span></span><span style="display:flex;"><span>pytest tests/ -m slow
+</span></span></code></pre></div><h2 id="troubleshooting">Troubleshooting</h2>
+<h3 id="import-errors">Import errors</h3>
+<p>If you see import errors, ensure:</p>
+<ol>
+<li>Python path includes project root</li>
+<li><code>src/</code> is importable</li>
+<li>Dependencies are installed</li>
+</ol>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-sh" data-lang="sh"><span style="display:flex;"><span>export PYTHONPATH<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;</span><span style="color:#e6db74">${</span>PYTHONPATH<span style="color:#e6db74">}</span><span style="color:#e6db74">:</span><span style="color:#66d9ef">$(</span>pwd<span style="color:#66d9ef">)</span><span style="color:#e6db74">&#34;</span>
+</span></span><span style="display:flex;"><span>pytest tests/
+</span></span></code></pre></div><h3 id="windows-import-deadlock">Windows import deadlock</h3>
+<p>The <code>conftest.py</code> pre-imports mutagen to prevent import-lock deadlock on Windows. Don&rsquo;t remove this.</p>
+<h3 id="mutagen-not-found">Mutagen not found</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-sh" data-lang="sh"><span style="display:flex;"><span>pip install mutagen&gt;<span style="color:#f92672">=</span>1.47.0
+</span></span></code></pre></div><h2 id="test-driven-development">Test-driven development</h2>
+<p>When adding new features:</p>
+<ol>
+<li>Write tests first</li>
+<li>Run tests (they should fail)</li>
+<li>Implement the feature</li>
+<li>Run tests (they should pass)</li>
+<li>Refactor if needed</li>
+</ol>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-sh" data-lang="sh"><span style="display:flex;"><span><span style="color:#75715e"># TDD workflow</span>
+</span></span><span style="display:flex;"><span>echo <span style="color:#e6db74">&#34;Write test&#34;</span> <span style="color:#f92672">&amp;&amp;</span> pytest tests/test_new_feature.py  <span style="color:#75715e"># FAIL</span>
+</span></span><span style="display:flex;"><span>echo <span style="color:#e6db74">&#34;Implement feature&#34;</span>
+</span></span><span style="display:flex;"><span>pytest tests/test_new_feature.py  <span style="color:#75715e"># PASS</span>
+</span></span></code></pre></div>
+</div></main><aside class="shell__right" aria-label="On this page"><div class="toc">
+      <p class="toc__label">On this page</p>
+      <nav id="TableOfContents">
+  <ul>
+    <li><a href="#overview">Overview</a></li>
+    <li><a href="#running-tests">Running tests</a>
+      <ul>
+        <li><a href="#basic-test-run">Basic test run</a></li>
+        <li><a href="#run-specific-test-file">Run specific test file</a></li>
+        <li><a href="#run-specific-test-class">Run specific test class</a></li>
+        <li><a href="#run-specific-test">Run specific test</a></li>
+      </ul>
+    </li>
+    <li><a href="#test-files">Test files</a>
+      <ul>
+        <li><a href="#testsconftestpy"><code>tests/conftest.py</code></a></li>
+        <li><a href="#teststest_lossy_classifypy"><code>tests/test_lossy_classify.py</code></a></li>
+        <li><a href="#teststest_conversion_dbpy"><code>tests/test_conversion_db.py</code></a></li>
+        <li><a href="#teststest_index_builderpy"><code>tests/test_index_builder.py</code></a></li>
+        <li><a href="#teststest_mutagen_probepy"><code>tests/test_mutagen_probe.py</code></a></li>
+        <li><a href="#teststest_progress_viewpy"><code>tests/test_progress_view.py</code></a></li>
+      </ul>
+    </li>
+    <li><a href="#test-fixtures">Test fixtures</a></li>
+    <li><a href="#mocking">Mocking</a></li>
+    <li><a href="#coverage">Coverage</a></li>
+    <li><a href="#continuous-integration">Continuous integration</a></li>
+    <li><a href="#writing-tests">Writing tests</a>
+      <ul>
+        <li><a href="#test-naming">Test naming</a></li>
+        <li><a href="#test-structure">Test structure</a></li>
+        <li><a href="#test-documentation">Test documentation</a></li>
+      </ul>
+    </li>
+    <li><a href="#test-data">Test data</a>
+      <ul>
+        <li><a href="#audio-fixtures">Audio fixtures</a></li>
+        <li><a href="#database-fixtures">Database fixtures</a></li>
+      </ul>
+    </li>
+    <li><a href="#performance-testing">Performance testing</a></li>
+    <li><a href="#troubleshooting">Troubleshooting</a>
+      <ul>
+        <li><a href="#import-errors">Import errors</a></li>
+        <li><a href="#windows-import-deadlock">Windows import deadlock</a></li>
+        <li><a href="#mutagen-not-found">Mutagen not found</a></li>
+      </ul>
+    </li>
+    <li><a href="#test-driven-development">Test-driven development</a></li>
+  </ul>
+</nav>
+    </div><label class="version-selector">
+  <span class="version-selector__label">Version</span>
+  <select class="version-selector__select" data-version-select><option value="/wrapper_dbpoweramp/" selected>
+        0.1.0 — 2026-06-28
+      </option></select>
+</label></aside>
+</div><footer class="site-footer">
+  <div class="site-footer__inner">
+    <p>
+      <span class="site-footer__brand">dBpoweramp Wrapper</span>
+      <span class="site-footer__sep">·</span>
+      <a href="https://github.com/5509346169/wrapper_dbpoweramp">Source on GitHub</a>
+    </p>
+    <p class="site-footer__tagline">Audiophile-grade audio conversion, on your terms.</p>
+  </div>
+</footer>
+<div class="cmdk" data-cmdk hidden role="dialog" aria-modal="true" aria-label="Search">
+  <div class="cmdk__backdrop" data-cmdk-close></div>
+  <div class="cmdk__panel">
+    <input type="search" class="cmdk__input"
+           data-cmdk-input
+           placeholder="Search docs…  (press Esc to close)"
+           autocomplete="off"
+           spellcheck="false">
+    <ul class="cmdk__results" data-cmdk-results></ul>
+    <p class="cmdk__hint">
+      <kbd>↑</kbd><kbd>↓</kbd> to navigate, <kbd>↵</kbd> to open, <kbd>Esc</kbd> to close.
+    </p>
+  </div>
+</div>
+<script>
+    (function () {
+      try {
+        var stored = localStorage.getItem("theme");
+        var prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+        var theme = stored || (prefersDark ? "dark" : "light");
+        document.documentElement.setAttribute("data-theme", theme);
+      } catch (_) {   }
+    })();
+  </script>
+</body>
+</html>

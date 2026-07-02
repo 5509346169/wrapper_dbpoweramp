@@ -1,0 +1,17 @@
+<aside class="shell__left sidebar" aria-label="Section navigation">
+  {{- range .Site.Sections -}}
+    <details class="sidebar__group{{ if eq $.Page.CurrentSection.Section .Section }} open{{ end }}">
+      <summary class="sidebar__group-label">{{ .Title }}</summary>
+      <ul class="sidebar__list">
+        {{- range .Pages -}}
+          <li>
+            <a class="sidebar__item{{ if eq $.Page . }} is-active{{ end }}"
+               href="{{ .RelPermalink }}">
+              {{ .Title }}
+            </a>
+          </li>
+        {{- end -}}
+      </ul>
+    </details>
+  {{- end -}}
+</aside>

@@ -1,0 +1,16 @@
+<figure class="waveform{{ with .Get "class" }} {{ . }}{{ end }}"
+        data-waveform
+        data-density="{{ .Get "density" | default "96" }}"
+        aria-label="{{ .Get "alt" | default "Animated waveform" }}">
+  <svg viewBox="0 0 800 200" preserveAspectRatio="none" role="img" aria-hidden="true">
+    <g class="waveform__grid" stroke="var(--rule)" stroke-width="1" fill="none">
+      <line x1="0" y1="100" x2="800" y2="100" />
+    </g>
+    <path class="waveform__carrier" fill="none" stroke="var(--accent)" stroke-width="1.5" />
+    <path class="waveform__harmonics" fill="none" stroke="var(--accent-warm)" stroke-width="0.75" opacity="0.7" />
+    <path class="waveform__noise" fill="none" stroke="var(--ink-mute)" stroke-width="0.5" opacity="0.4" />
+  </svg>
+  {{- with .Get "caption" -}}
+  <figcaption class="waveform__caption">{{ . }}</figcaption>
+  {{- end -}}
+</figure>

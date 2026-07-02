@@ -1,0 +1,15 @@
+{{- $type := .Get "type" | default "note" -}}
+{{- $title := .Get "title" -}}
+{{- $icon := "i" -}}
+{{- if eq $type "warning" -}}
+  {{- $icon = "!" -}}
+{{- else if eq $type "audiophile" -}}
+  {{- $icon = "♠" -}}
+{{- end -}}
+<aside class="callout callout--{{ $type }}" role="note">
+  <span class="callout__icon" aria-hidden="true">{{ $icon }}</span>
+  <div class="callout__body">
+    {{- with $title -}}<p class="callout__title">{{ . }}</p>{{- end -}}
+    <div class="callout__content">{{ .Inner }}</div>
+  </div>
+</aside>

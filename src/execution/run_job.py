@@ -61,6 +61,7 @@ def run_job(
     stream_callback: Optional[Callable[[str], None]],
     events: Optional[Queue] = None,
     retry_failed: bool = False,
+    md5_staging: str = "auto",
 ) -> tuple[JobStatus, str, str | None]:
     """
     Execute a single ConversionJob.
@@ -83,6 +84,8 @@ def run_job(
             implies this behaviour, but ``retry_failed`` lets ``--failed-only``
             get the same retry semantics without taking the broader
             ``--force`` cost of ignoring the SUCCESS cache.
+        md5_staging: md5sum staging mode ('auto', 'on', 'off') passed through
+            to the native dbPoweramp backend for UTF-8 / MAX_PATH handling.
 
     Returns:
         A tuple of (status, infile_name, error_msg).
@@ -288,9 +291,6 @@ def run_job(
                         JobEventKind.VERIFY_RESULT,
                         (infile_name, "UNSUPPORTED", None, None, None),
                     ))
-                # Record the failure so subsequent runs (without --force) short-circuit
-                # via last_failure() and so the user can audit failed jobs with
-                # purge_failed_audio.py or the GUI.
                 output_size = job.outfile.stat().st_size if job.outfile.exists() else 0
                 db.log_conversion(
                     source=str(job.infile),
@@ -305,6 +305,7 @@ def run_job(
                     verify_reason=None,
                     verify_format=None,
                     verify_duration_s=None,
+                    temp_filename=getattr(result, "temp_filename", None),
                 )
                 status = result.status
                 error_msg = result.error_msg

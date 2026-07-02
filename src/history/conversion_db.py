@@ -12,6 +12,7 @@ from typing import Optional
 
 from src.history.schema import (
     ADD_FILE_SIZE_COLUMN_SQL,
+    ADD_TEMP_FILENAME_COLUMN_SQL,
     ADD_VERIFY_COLUMNS_SQL,
     CREATE_HISTORY_TABLE_SQL,
     INSERT_OR_REPLACE_HISTORY_SQL,
@@ -68,6 +69,12 @@ class ConversionDB:
                 self._conn.commit()
             except sqlite3.OperationalError:
                 pass  # columns already exist
+            # Idempotent migration: temp_filename column.
+            try:
+                self._conn.execute(ADD_TEMP_FILENAME_COLUMN_SQL)
+                self._conn.commit()
+            except sqlite3.OperationalError:
+                pass  # column already exists
 
     def get_record(self, source: str, dest: str) -> Optional[dict]:
         """Return the row matching (source_path, dest_path), or None.
@@ -79,13 +86,15 @@ class ConversionDB:
         Returns:
             Dict with columns: id, source_path, dest_path, job_type, command,
             status, error_msg, stdout, timestamp, file_size, verify_status,
-            verify_reason, verify_format, verify_duration_s. Or None if no row exists.
+            verify_reason, verify_format, verify_duration_s, temp_filename.
+            Or None if no row exists.
         """
         with self._lock:
             cursor = self._conn.execute(
                 "SELECT id, source_path, dest_path, job_type, command, status, "
                 "       error_msg, stdout, timestamp, file_size, "
-                "       verify_status, verify_reason, verify_format, verify_duration_s "
+                "       verify_status, verify_reason, verify_format, verify_duration_s, "
+                "       temp_filename "
                 "FROM history WHERE source_path = ? AND dest_path = ?",
                 (source, dest),
             )
@@ -107,6 +116,7 @@ class ConversionDB:
                 "verify_reason": row[11],
                 "verify_format": row[12],
                 "verify_duration_s": row[13],
+                "temp_filename": row[14],
             }
 
     def log_conversion(
@@ -123,6 +133,7 @@ class ConversionDB:
         verify_reason: Optional[str] = None,
         verify_format: Optional[str] = None,
         verify_duration_s: Optional[float] = None,
+        temp_filename: Optional[str] = None,
     ) -> None:
         """Insert or update a history row with the current UTC timestamp.
 
@@ -143,6 +154,7 @@ class ConversionDB:
             verify_reason: Optional human-readable verify reason.
             verify_format: Optional codec/container string (e.g. 'FLAC/PCM_16').
             verify_duration_s: Optional output duration in seconds.
+            temp_filename: Optional temp staging filename for failed jobs (for debugging).
         """
         with self._lock:
             timestamp = datetime_now_utc_iso()
@@ -152,6 +164,7 @@ class ConversionDB:
                     source, dest, job_type, command, status, error_msg, stdout,
                     timestamp, file_size,
                     verify_status, verify_reason, verify_format, verify_duration_s,
+                    temp_filename,
                 ),
             )
             self._conn.commit()

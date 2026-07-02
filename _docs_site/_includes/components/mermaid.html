@@ -1,8 +1,0 @@
-{%- comment -%}
-  Mermaid diagram — _plugins/mermaid.rb turns {% mermaid %}...{% endmermaid %}
-  into a <div class="mermaid"> + a script tag pointing at the locally
-  vendored mermaid bundle. NO CDN — the bundle is in assets/vendor/mermaid.js.
-{%- endcomment -%}
-<div class="mermaid-block" data-mermaid-source>
-{{- include.content | strip -}}
-</div>

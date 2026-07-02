@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light"><script src="/wrapper_dbpoweramp/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=wrapper_dbpoweramp/livereload" data-no-instant defer></script><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f6f4ee" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f1216" media="(prefers-color-scheme: dark)">
+
+<title>Presets Reference — dBpoweramp Wrapper</title>
+<meta name="description" content="Preset schema, per-backend encoder args, and how to write your own.">
+
+<link rel="canonical" href="http://localhost:1313/wrapper_dbpoweramp/configuration/presets/">
+
+
+<link rel="preload" as="font" type="font/woff2" href="/assets/fonts/bodoni-moda-var.woff2" crossorigin>
+<link rel="preload" as="font" type="font/woff2" href="/assets/fonts/geist-var.woff2" crossorigin>
+<link rel="preload" as="font" type="font/woff2" href="/assets/fonts/jetbrains-mono-var.woff2" crossorigin>
+
+<link rel="stylesheet" href="/css/main.css">
+
+<script type="module" src="/assets/vendor/theme.js" defer></script>
+<script type="module" src="/assets/vendor/waveform.js" defer></script>
+<script type="module" src="/assets/vendor/search-palette.js" defer></script>
+<script type="module" src="/assets/vendor/diagrams.js" defer></script>
+<body class="theme-shell">
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div class="shell"><header class="shell__header">
+  <div class="header__inner">
+    <a class="header__brand" href="/">
+      <span class="header__mark">dB</span>
+      <span class="header__wordmark">dBpoweramp Wrapper</span>
+    </a>
+
+    <nav class="header__nav" aria-label="Sections"><a class="header__nav-item"
+           href="/wrapper_dbpoweramp/architecture/">
+          Architecture
+        </a><a class="header__nav-item is-active"
+           href="/wrapper_dbpoweramp/configuration/">
+          settings.yaml Reference
+        </a><a class="header__nav-item"
+           href="/wrapper_dbpoweramp/overview/">
+          Overview
+        </a><a class="header__nav-item"
+           href="/wrapper_dbpoweramp/engineering/">
+          Engineerings
+        </a><a class="header__nav-item"
+           href="/wrapper_dbpoweramp/getting-started/">
+          Getting-Starteds
+        </a><a class="header__nav-item"
+           href="/wrapper_dbpoweramp/reference/">
+          References
+        </a></nav>
+
+    <div class="header__actions">
+      <button class="header__cmd" type="button"
+              data-cmdk-open
+              aria-label="Open command palette (Ctrl/Cmd-K)">
+        <kbd>Ctrl</kbd><kbd>K</kbd>
+      </button>
+      <button class="header__theme" type="button"
+              data-theme-toggle
+              aria-label="Toggle dark mode">
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" fill="currentColor"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+</header>
+<aside class="shell__left sidebar" aria-label="Section navigation"><details class="sidebar__group">
+      <summary class="sidebar__group-label">Architecture</summary>
+      <ul class="sidebar__list"><li>
+            <a class="sidebar__item"
+               href="/wrapper_dbpoweramp/architecture/workflow/">
+              Workflow
+            </a>
+          </li><li>
+            <a class="sidebar__item"
+               href="/wrapper_dbpoweramp/architecture/backends/">
+              Backends Reference
+            </a>
+          </li></ul>
+    </details><details class="sidebar__group open">
+      <summary class="sidebar__group-label">settings.yaml Reference</summary>
+      <ul class="sidebar__list"><li>
+            <a class="sidebar__item"
+               href="/wrapper_dbpoweramp/configuration/cli/">
+              Command-Line Interface
+            </a>
+          </li><li>
+            <a class="sidebar__item is-active"
+               href="/wrapper_dbpoweramp/configuration/presets/">
+              Presets Reference
+            </a>
+          </li></ul>
+    </details><details class="sidebar__group">
+      <summary class="sidebar__group-label">Overview</summary>
+      <ul class="sidebar__list"></ul>
+    </details><details class="sidebar__group">
+      <summary class="sidebar__group-label">Engineerings</summary>
+      <ul class="sidebar__list"><li>
+            <a class="sidebar__item"
+               href="/wrapper_dbpoweramp/engineering/file-index/">
+              File Index System
+            </a>
+          </li><li>
+            <a class="sidebar__item"
+               href="/wrapper_dbpoweramp/engineering/lossy-handling/">
+              Lossy Source Handling
+            </a>
+          </li><li>
+            <a class="sidebar__item"
+               href="/wrapper_dbpoweramp/engineering/sidecar-files/">
+              Sidecar Files
+            </a>
+          </li><li>
+            <a class="sidebar__item"
+               href="/wrapper_dbpoweramp/engineering/error-handling/">
+              Error Handling
+            </a>
+          </li><li>
+            <a class="sidebar__item"
+               href="/wrapper_dbpoweramp/engineering/testing/">
+              Testing
+            </a>
+          </li></ul>
+    </details><details class="sidebar__group">
+      <summary class="sidebar__group-label">Getting-Starteds</summary>
+      <ul class="sidebar__list"><li>
+            <a class="sidebar__item"
+               href="/wrapper_dbpoweramp/getting-started/installation/">
+              Installation
+            </a>
+          </li></ul>
+    </details><details class="sidebar__group">
+      <summary class="sidebar__group-label">References</summary>
+      <ul class="sidebar__list"><li>
+            <a class="sidebar__item"
+               href="/wrapper_dbpoweramp/reference/api/">
+              Public API Reference
+            </a>
+          </li><li>
+            <a class="sidebar__item"
+               href="/wrapper_dbpoweramp/reference/modules/">
+              Module Reference
+            </a>
+          </li></ul>
+    </details></aside>
+<main id="main" class="shell__main"><div class="prose">
+  <p>This document provides a complete reference for all preset definitions in <code>presets.yaml</code>.</p>
+<h2 id="overview">Overview</h2>
+<p>Presets define how audio files should be encoded, including:</p>
+<ul>
+<li>Output file extension</li>
+<li>Per-backend encoder settings</li>
+<li>Sidecar file handling (lyrics, covers)</li>
+</ul>
+<p>Presets are loaded from <code>presets.yaml</code> by <code>src/config/preset_loader.py</code>.</p>
+<h2 id="available-presets">Available presets</h2>
+<table>
+	<thead>
+			<tr>
+					<th>Preset</th>
+					<th>Output</th>
+					<th>Backends</th>
+					<th>Description</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td><code>flac-lossless</code></td>
+					<td>FLAC</td>
+					<td>all</td>
+					<td>FLAC compression level 5</td>
+			</tr>
+			<tr>
+					<td><code>mp3-v0-vbr</code></td>
+					<td>MP3</td>
+					<td>all</td>
+					<td>MP3 V0 VBR (~245 kbps)</td>
+			</tr>
+			<tr>
+					<td><code>mp3-320-cbr</code></td>
+					<td>MP3</td>
+					<td>all</td>
+					<td>MP3 320 kbps CBR</td>
+			</tr>
+			<tr>
+					<td><code>aac-vbr-high</code></td>
+					<td>M4A</td>
+					<td>all</td>
+					<td>AAC VBR quality 5 (high)</td>
+			</tr>
+			<tr>
+					<td><code>qaac-cvbr-256</code></td>
+					<td>M4A</td>
+					<td>dBpoweramp only</td>
+					<td>Apple AAC via QAAC 256 kbps</td>
+			</tr>
+			<tr>
+					<td><code>opus-128</code></td>
+					<td>OPUS</td>
+					<td>all</td>
+					<td>Opus 128 kbps</td>
+			</tr>
+	</tbody>
+</table>
+<h2 id="preset-schema">Preset schema</h2>
+<p>Each preset has the following structure:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">preset-name</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">ext</span>: <span style="color:#e6db74">&#34;.output_extension&#34;</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">backends</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">wine_dbpoweramp</span>:
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">encoder</span>: <span style="color:#e6db74">&#34;Encoder Name&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">args</span>: [<span style="color:#e6db74">&#34;arg1&#34;</span>, <span style="color:#e6db74">&#34;arg2&#34;</span>]
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">native_ffmpeg</span>:
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">tool</span>: <span style="color:#e6db74">&#34;ffmpeg&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">args</span>: [<span style="color:#e6db74">&#34;-c:a&#34;</span>, <span style="color:#e6db74">&#34;libmp3lame&#34;</span>, <span style="color:#e6db74">&#34;-q:a&#34;</span>, <span style="color:#e6db74">&#34;0&#34;</span>]
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">requires_encoder</span>: <span style="color:#e6db74">&#34;libmp3lame&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">native_dbpoweramp</span>:
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">encoder</span>: <span style="color:#e6db74">&#34;Encoder Name&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">args</span>: [<span style="color:#e6db74">&#34;arg1&#34;</span>, <span style="color:#e6db74">&#34;arg2&#34;</span>]
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">sidecars</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">lyrics</span>:
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">copy</span>: <span style="color:#66d9ef">true</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">extensions</span>: [<span style="color:#e6db74">&#34;.lrc&#34;</span>, <span style="color:#e6db74">&#34;.txt&#34;</span>]
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">hide</span>: <span style="color:#66d9ef">false</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">covers</span>:
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">copy</span>: <span style="color:#66d9ef">true</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">patterns</span>: [<span style="color:#e6db74">&#34;cover.jpg&#34;</span>, <span style="color:#e6db74">&#34;cover.png&#34;</span>, <span style="color:#e6db74">&#34;folder.jpg&#34;</span>, <span style="color:#e6db74">&#34;albumart.jpg&#34;</span>]
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">hide</span>: <span style="color:#66d9ef">true</span>
+</span></span></code></pre></div><h2 id="flac-lossless-flac-lossless">FLAC lossless (<code>flac-lossless</code>)</h2>
+<p>Lossless FLAC encoding at compression level 5.</p>
+<ul>
+<li>Extension: <code>.flac</code></li>
+<li>Type: Lossless</li>
+</ul>
+<h3 id="native_ffmpeg"><code>native_ffmpeg</code></h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">tool</span>: <span style="color:#e6db74">&#34;ffmpeg&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">args</span>: [<span style="color:#e6db74">&#34;-c:a&#34;</span>, <span style="color:#e6db74">&#34;flac&#34;</span>, <span style="color:#e6db74">&#34;-compression_level&#34;</span>, <span style="color:#e6db74">&#34;5&#34;</span>]
+</span></span></code></pre></div><h3 id="wine_dbpoweramp--native_dbpoweramp"><code>wine_dbpoweramp</code> / <code>native_dbpoweramp</code></h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">encoder</span>: <span style="color:#e6db74">&#34;FLAC&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">args</span>: [<span style="color:#e6db74">&#34;-compression-level-5&#34;</span>, <span style="color:#e6db74">&#34;-verify&#34;</span>]
+</span></span></code></pre></div><h3 id="sidecars">Sidecars</h3>
+<ul>
+<li><strong>Lyrics:</strong> Copy as <code>.lrc</code>, <code>.txt</code></li>
+<li><strong>Covers:</strong> Copy as <code>.cover.jpg</code>, <code>.cover.png</code>, <code>.folder.jpg</code>, <code>.albumart.jpg</code> (hidden)</li>
+</ul>
+<h2 id="mp3-v0-vbr-mp3-v0-vbr">MP3 V0 VBR (<code>mp3-v0-vbr</code>)</h2>
+<p>LAME MP3 encoding at V0 variable bitrate (~245 kbps average).</p>
+<ul>
+<li>Extension: <code>.mp3</code></li>
+<li>Type: Lossy</li>
+</ul>
+<h3 id="native_ffmpeg-1"><code>native_ffmpeg</code></h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">tool</span>: <span style="color:#e6db74">&#34;ffmpeg&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">args</span>: [<span style="color:#e6db74">&#34;-c:a&#34;</span>, <span style="color:#e6db74">&#34;libmp3lame&#34;</span>, <span style="color:#e6db74">&#34;-q:a&#34;</span>, <span style="color:#e6db74">&#34;0&#34;</span>]
+</span></span></code></pre></div><h3 id="wine_dbpoweramp--native_dbpoweramp-1"><code>wine_dbpoweramp</code> / <code>native_dbpoweramp</code></h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">encoder</span>: <span style="color:#e6db74">&#34;mp3 (LAME)&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">args</span>: [<span style="color:#e6db74">&#34;-V 0&#34;</span>, <span style="color:#e6db74">&#34;-encoding=\&#34;SLOW\&#34;&#34;</span>]
+</span></span></code></pre></div><h2 id="mp3-320-cbr-mp3-320-cbr">MP3 320 CBR (<code>mp3-320-cbr</code>)</h2>
+<p>LAME MP3 encoding at constant 320 kbps.</p>
+<ul>
+<li>Extension: <code>.mp3</code></li>
+<li>Type: Lossy</li>
+</ul>
+<h3 id="native_ffmpeg-2"><code>native_ffmpeg</code></h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">tool</span>: <span style="color:#e6db74">&#34;ffmpeg&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">args</span>: [<span style="color:#e6db74">&#34;-c:a&#34;</span>, <span style="color:#e6db74">&#34;libmp3lame&#34;</span>, <span style="color:#e6db74">&#34;-b:a&#34;</span>, <span style="color:#e6db74">&#34;320k&#34;</span>]
+</span></span></code></pre></div><h3 id="wine_dbpoweramp--native_dbpoweramp-2"><code>wine_dbpoweramp</code> / <code>native_dbpoweramp</code></h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">encoder</span>: <span style="color:#e6db74">&#34;mp3 (LAME)&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">args</span>: [<span style="color:#e6db74">&#34;-b 320&#34;</span>]
+</span></span></code></pre></div><h2 id="aac-vbr-high-aac-vbr-high">AAC VBR High (<code>aac-vbr-high</code>)</h2>
+<p>FDK-AAC encoder at VBR quality 5 (high quality).</p>
+<ul>
+<li>Extension: <code>.m4a</code></li>
+<li>Type: Lossy</li>
+</ul>
+<h3 id="native_ffmpeg-3"><code>native_ffmpeg</code></h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">tool</span>: <span style="color:#e6db74">&#34;ffmpeg&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">args</span>: [<span style="color:#e6db74">&#34;-c:a&#34;</span>, <span style="color:#e6db74">&#34;libfdk_aac&#34;</span>, <span style="color:#e6db74">&#34;-vbr&#34;</span>, <span style="color:#e6db74">&#34;5&#34;</span>]
+</span></span><span style="display:flex;"><span><span style="color:#f92672">requires_encoder</span>: <span style="color:#e6db74">&#34;libfdk_aac&#34;</span>
+</span></span></code></pre></div><aside class="callout callout--warning" role="note">
+  <span class="callout__icon" aria-hidden="true">!</span>
+  <div class="callout__body"><p class="callout__title">FDK AAC availability</p><div class="callout__content">The `requires_encoder` field tells the backend to check `ffmpeg -encoders` before running. If FDK AAC is not available, a clear error message is shown with installation instructions.</div>
+  </div>
+</aside>
+
+<h3 id="wine_dbpoweramp--native_dbpoweramp-3"><code>wine_dbpoweramp</code> / <code>native_dbpoweramp</code></h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">encoder</span>: <span style="color:#e6db74">&#34;m4a FDK (AAC)&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">args</span>: [<span style="color:#e6db74">&#34;-m 5&#34;</span>]
+</span></span></code></pre></div><h2 id="qaac-cvbr-256-qaac-cvbr-256">QAAC CVBR 256 (<code>qaac-cvbr-256</code>)</h2>
+<p>Apple&rsquo;s QAAC encoder at 256 kbps constrained VBR. Uses <code>CoreAudioToolbox.dll</code>.</p>
+<ul>
+<li>Extension: <code>.m4a</code></li>
+<li>Type: Lossy</li>
+</ul>
+<h3 id="wine_dbpoweramp--native_dbpoweramp-4"><code>wine_dbpoweramp</code> / <code>native_dbpoweramp</code></h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">encoder</span>: <span style="color:#e6db74">&#34;m4a QAAC (iTunes)&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">args</span>: [<span style="color:#e6db74">&#34;-cbr_vbr=\&#34;cVBR\&#34;&#34;</span>, <span style="color:#e6db74">&#34;-bitrate=\&#34;256\&#34;&#34;</span>, <span style="color:#e6db74">&#34;-codec=\&#34;LC AAC\&#34;&#34;</span>, <span style="color:#e6db74">&#34;-keepsr&#34;</span>]
+</span></span></code></pre></div><h3 id="limitations">Limitations</h3>
+<ul>
+<li><strong>Does NOT support <code>native_ffmpeg</code></strong> — QAAC is Apple-only technology</li>
+<li><strong>Requires <code>CoreAudioToolbox.dll</code></strong> from iTunes installation
+<ul>
+<li>On Linux: install in the Wine prefix alongside dBpoweramp</li>
+<li>On Windows: install alongside dBpoweramp or install iTunes</li>
+</ul>
+</li>
+</ul>
+<h2 id="opus-128-opus-128">Opus 128 (<code>opus-128</code>)</h2>
+<p>Opus encoding at 128 kbps.</p>
+<ul>
+<li>Extension: <code>.opus</code></li>
+<li>Type: Lossy</li>
+</ul>
+<h3 id="native_ffmpeg-4"><code>native_ffmpeg</code></h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">tool</span>: <span style="color:#e6db74">&#34;ffmpeg&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">args</span>: [<span style="color:#e6db74">&#34;-c:a&#34;</span>, <span style="color:#e6db74">&#34;libopus&#34;</span>, <span style="color:#e6db74">&#34;-b:a&#34;</span>, <span style="color:#e6db74">&#34;128k&#34;</span>]
+</span></span></code></pre></div><h3 id="wine_dbpoweramp--native_dbpoweramp-5"><code>wine_dbpoweramp</code> / <code>native_dbpoweramp</code></h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">encoder</span>: <span style="color:#e6db74">&#34;Opus&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">args</span>: [<span style="color:#e6db74">&#34;-bitrate 128&#34;</span>]
+</span></span></code></pre></div><h2 id="sidecar-configuration">Sidecar configuration</h2>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">lyrics</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">copy</span>: <span style="color:#66d9ef">true</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">extensions</span>: [<span style="color:#e6db74">&#34;.lrc&#34;</span>, <span style="color:#e6db74">&#34;.txt&#34;</span>]
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">hide</span>: <span style="color:#66d9ef">false</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">covers</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">copy</span>: <span style="color:#66d9ef">true</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">patterns</span>: [<span style="color:#e6db74">&#34;cover.jpg&#34;</span>, <span style="color:#e6db74">&#34;cover.png&#34;</span>, <span style="color:#e6db74">&#34;folder.jpg&#34;</span>, <span style="color:#e6db74">&#34;albumart.jpg&#34;</span>]
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">hide</span>: <span style="color:#66d9ef">true</span>
+</span></span></code></pre></div><h3 id="hide-behaviour">Hide behaviour</h3>
+<p>When <code>hide: true</code>, files are renamed with a dot prefix:</p>
+<table>
+	<thead>
+			<tr>
+					<th>Original</th>
+					<th>Hidden</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td><code>cover.jpg</code></td>
+					<td><code>.cover.jpg</code></td>
+			</tr>
+			<tr>
+					<td><code>folder.png</code></td>
+					<td><code>.folder.png</code></td>
+			</tr>
+			<tr>
+					<td><code>albumart.jpg</code></td>
+					<td><code>.albumart.jpg</code></td>
+			</tr>
+	</tbody>
+</table>
+<p>Files already prefixed with a dot are not modified.</p>
+<p>This keeps your music directories clean by hiding artwork in standard file browsers.</p>
+<h2 id="creating-custom-presets">Creating custom presets</h2>
+<h3 id="minimal-preset">Minimal preset</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">presets</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">my-flac</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">ext</span>: <span style="color:#e6db74">&#34;.flac&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">backends</span>:
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">native_ffmpeg</span>:
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">tool</span>: <span style="color:#e6db74">&#34;ffmpeg&#34;</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">args</span>: [<span style="color:#e6db74">&#34;-c:a&#34;</span>, <span style="color:#e6db74">&#34;flac&#34;</span>, <span style="color:#e6db74">&#34;-compression_level&#34;</span>, <span style="color:#e6db74">&#34;8&#34;</span>]
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">sidecars</span>:
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">lyrics</span>: { <span style="color:#f92672">copy: true, extensions</span>: [<span style="color:#e6db74">&#34;.lrc&#34;</span><span style="color:#f92672">], hide</span>: <span style="color:#66d9ef">false</span> }
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">covers</span>: { <span style="color:#f92672">copy: true, patterns</span>: [<span style="color:#e6db74">&#34;cover.jpg&#34;</span><span style="color:#f92672">], hide</span>: <span style="color:#66d9ef">true</span> }
+</span></span></code></pre></div><h3 id="custom-mp3-vbr-quality">Custom MP3 VBR quality</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">presets</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">mp3-192-vbr</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">ext</span>: <span style="color:#e6db74">&#34;.mp3&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">backends</span>:
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">native_ffmpeg</span>:
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">tool</span>: <span style="color:#e6db74">&#34;ffmpeg&#34;</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">args</span>: [<span style="color:#e6db74">&#34;-c:a&#34;</span>, <span style="color:#e6db74">&#34;libmp3lame&#34;</span>, <span style="color:#e6db74">&#34;-q:a&#34;</span>, <span style="color:#e6db74">&#34;2&#34;</span>]   <span style="color:#75715e"># ~190 kbps VBR</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">wine_dbpoweramp</span>:
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">encoder</span>: <span style="color:#e6db74">&#34;mp3 (LAME)&#34;</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">args</span>: [<span style="color:#e6db74">&#34;-V 2&#34;</span>]
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">native_dbpoweramp</span>:
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">encoder</span>: <span style="color:#e6db74">&#34;mp3 (LAME)&#34;</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">args</span>: [<span style="color:#e6db74">&#34;-V 2&#34;</span>]
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">sidecars</span>:
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">lyrics</span>: { <span style="color:#f92672">copy: true, extensions</span>: [<span style="color:#e6db74">&#34;.lrc&#34;</span>, <span style="color:#e6db74">&#34;.txt&#34;</span><span style="color:#f92672">], hide</span>: <span style="color:#66d9ef">false</span> }
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">covers</span>: { <span style="color:#f92672">copy: true, patterns</span>: [<span style="color:#e6db74">&#34;cover.jpg&#34;</span>, <span style="color:#e6db74">&#34;cover.png&#34;</span>, <span style="color:#e6db74">&#34;folder.jpg&#34;</span>, <span style="color:#e6db74">&#34;albumart.jpg&#34;</span><span style="color:#f92672">], hide</span>: <span style="color:#66d9ef">true</span> }
+</span></span></code></pre></div><h2 id="validation">Validation</h2>
+<p>The preset loader (<code>src/config/preset_loader.py</code>) validates presets:</p>
+<table>
+	<thead>
+			<tr>
+					<th>Check</th>
+					<th>Behaviour on failure</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td>Missing <code>ext</code></td>
+					<td>Raises <code>ConfigError</code></td>
+			</tr>
+			<tr>
+					<td><code>ext</code> doesn&rsquo;t start with <code>.</code></td>
+					<td>Raises <code>ConfigError</code></td>
+			</tr>
+			<tr>
+					<td>Missing <code>backends</code></td>
+					<td>Raises <code>ConfigError</code></td>
+			</tr>
+			<tr>
+					<td>Empty <code>backends</code></td>
+					<td>Raises <code>ConfigError</code></td>
+			</tr>
+			<tr>
+					<td>Invalid <code>extensions</code> type</td>
+					<td>Raises <code>ConfigError</code></td>
+			</tr>
+			<tr>
+					<td>Invalid <code>hide</code> type</td>
+					<td>Raises <code>ConfigError</code></td>
+			</tr>
+			<tr>
+					<td>YAML parse error</td>
+					<td>Raises <code>ConfigError</code></td>
+			</tr>
+	</tbody>
+</table>
+<h2 id="encoder-availability">Encoder availability</h2>
+<h3 id="ffmpeg-encoders">FFmpeg encoders</h3>
+<p>FFmpeg may not include all encoders depending on build:</p>
+<table>
+	<thead>
+			<tr>
+					<th>Encoder</th>
+					<th>Common build</th>
+					<th>Installation</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td><code>libmp3lame</code></td>
+					<td>Standard</td>
+					<td>Usually included</td>
+			</tr>
+			<tr>
+					<td><code>libfdk_aac</code></td>
+					<td>Often excluded</td>
+					<td><code>ffmpeg-full</code> from AUR or rebuild</td>
+			</tr>
+			<tr>
+					<td><code>libopus</code></td>
+					<td>Standard</td>
+					<td>Usually included</td>
+			</tr>
+			<tr>
+					<td><code>flac</code></td>
+					<td>Standard</td>
+					<td>Usually included</td>
+			</tr>
+	</tbody>
+</table>
+<p>Check available encoders:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-sh" data-lang="sh"><span style="display:flex;"><span>ffmpeg -encoders 2&gt;/dev/null | grep -E <span style="color:#e6db74">&#34;aac|mp3|opus|flac&#34;</span>
+</span></span></code></pre></div><h3 id="lame-vbr-quality-scale">LAME VBR quality scale</h3>
+<table>
+	<thead>
+			<tr>
+					<th>Quality</th>
+					<th>Bitrate (approx)</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td><code>-V 0</code></td>
+					<td>~245 kbps</td>
+			</tr>
+			<tr>
+					<td><code>-V 1</code></td>
+					<td>~225 kbps</td>
+			</tr>
+			<tr>
+					<td><code>-V 2</code></td>
+					<td>~190 kbps</td>
+			</tr>
+			<tr>
+					<td><code>-V 3</code></td>
+					<td>~175 kbps</td>
+			</tr>
+			<tr>
+					<td><code>-V 4</code></td>
+					<td>~165 kbps</td>
+			</tr>
+			<tr>
+					<td><code>-V 5</code></td>
+					<td>~130 kbps</td>
+			</tr>
+			<tr>
+					<td><code>-V 6</code></td>
+					<td>~115 kbps</td>
+			</tr>
+			<tr>
+					<td><code>-V 7</code></td>
+					<td>~100 kbps</td>
+			</tr>
+			<tr>
+					<td><code>-V 8</code></td>
+					<td>~85 kbps</td>
+			</tr>
+			<tr>
+					<td><code>-V 9</code></td>
+					<td>~65 kbps</td>
+			</tr>
+	</tbody>
+</table>
+<h3 id="fdk-aac-vbr-modes">FDK AAC VBR modes</h3>
+<table>
+	<thead>
+			<tr>
+					<th>Mode</th>
+					<th>Description</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td><code>-m 1</code></td>
+					<td>Very low (~64 kbps)</td>
+			</tr>
+			<tr>
+					<td><code>-m 2</code></td>
+					<td>Low (~96 kbps)</td>
+			</tr>
+			<tr>
+					<td><code>-m 3</code></td>
+					<td>Medium (~128 kbps)</td>
+			</tr>
+			<tr>
+					<td><code>-m 4</code></td>
+					<td>High (~192 kbps)</td>
+			</tr>
+			<tr>
+					<td><code>-m 5</code></td>
+					<td>Very high (~256 kbps)</td>
+			</tr>
+	</tbody>
+</table>
+
+</div></main><aside class="shell__right" aria-label="On this page"><div class="toc">
+      <p class="toc__label">On this page</p>
+      <nav id="TableOfContents">
+  <ul>
+    <li><a href="#overview">Overview</a></li>
+    <li><a href="#available-presets">Available presets</a></li>
+    <li><a href="#preset-schema">Preset schema</a></li>
+    <li><a href="#flac-lossless-flac-lossless">FLAC lossless (<code>flac-lossless</code>)</a>
+      <ul>
+        <li><a href="#native_ffmpeg"><code>native_ffmpeg</code></a></li>
+        <li><a href="#wine_dbpoweramp--native_dbpoweramp"><code>wine_dbpoweramp</code> / <code>native_dbpoweramp</code></a></li>
+        <li><a href="#sidecars">Sidecars</a></li>
+      </ul>
+    </li>
+    <li><a href="#mp3-v0-vbr-mp3-v0-vbr">MP3 V0 VBR (<code>mp3-v0-vbr</code>)</a>
+      <ul>
+        <li><a href="#native_ffmpeg-1"><code>native_ffmpeg</code></a></li>
+        <li><a href="#wine_dbpoweramp--native_dbpoweramp-1"><code>wine_dbpoweramp</code> / <code>native_dbpoweramp</code></a></li>
+      </ul>
+    </li>
+    <li><a href="#mp3-320-cbr-mp3-320-cbr">MP3 320 CBR (<code>mp3-320-cbr</code>)</a>
+      <ul>
+        <li><a href="#native_ffmpeg-2"><code>native_ffmpeg</code></a></li>
+        <li><a href="#wine_dbpoweramp--native_dbpoweramp-2"><code>wine_dbpoweramp</code> / <code>native_dbpoweramp</code></a></li>
+      </ul>
+    </li>
+    <li><a href="#aac-vbr-high-aac-vbr-high">AAC VBR High (<code>aac-vbr-high</code>)</a>
+      <ul>
+        <li><a href="#native_ffmpeg-3"><code>native_ffmpeg</code></a></li>
+        <li><a href="#wine_dbpoweramp--native_dbpoweramp-3"><code>wine_dbpoweramp</code> / <code>native_dbpoweramp</code></a></li>
+      </ul>
+    </li>
+    <li><a href="#qaac-cvbr-256-qaac-cvbr-256">QAAC CVBR 256 (<code>qaac-cvbr-256</code>)</a>
+      <ul>
+        <li><a href="#wine_dbpoweramp--native_dbpoweramp-4"><code>wine_dbpoweramp</code> / <code>native_dbpoweramp</code></a></li>
+        <li><a href="#limitations">Limitations</a></li>
+      </ul>
+    </li>
+    <li><a href="#opus-128-opus-128">Opus 128 (<code>opus-128</code>)</a>
+      <ul>
+        <li><a href="#native_ffmpeg-4"><code>native_ffmpeg</code></a></li>
+        <li><a href="#wine_dbpoweramp--native_dbpoweramp-5"><code>wine_dbpoweramp</code> / <code>native_dbpoweramp</code></a></li>
+      </ul>
+    </li>
+    <li><a href="#sidecar-configuration">Sidecar configuration</a>
+      <ul>
+        <li><a href="#hide-behaviour">Hide behaviour</a></li>
+      </ul>
+    </li>
+    <li><a href="#creating-custom-presets">Creating custom presets</a>
+      <ul>
+        <li><a href="#minimal-preset">Minimal preset</a></li>
+        <li><a href="#custom-mp3-vbr-quality">Custom MP3 VBR quality</a></li>
+      </ul>
+    </li>
+    <li><a href="#validation">Validation</a></li>
+    <li><a href="#encoder-availability">Encoder availability</a>
+      <ul>
+        <li><a href="#ffmpeg-encoders">FFmpeg encoders</a></li>
+        <li><a href="#lame-vbr-quality-scale">LAME VBR quality scale</a></li>
+        <li><a href="#fdk-aac-vbr-modes">FDK AAC VBR modes</a></li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+    </div><label class="version-selector">
+  <span class="version-selector__label">Version</span>
+  <select class="version-selector__select" data-version-select><option value="/wrapper_dbpoweramp/" selected>
+        0.1.0 — 2026-06-28
+      </option></select>
+</label></aside>
+</div><footer class="site-footer">
+  <div class="site-footer__inner">
+    <p>
+      <span class="site-footer__brand">dBpoweramp Wrapper</span>
+      <span class="site-footer__sep">·</span>
+      <a href="https://github.com/5509346169/wrapper_dbpoweramp">Source on GitHub</a>
+    </p>
+    <p class="site-footer__tagline">Audiophile-grade audio conversion, on your terms.</p>
+  </div>
+</footer>
+<div class="cmdk" data-cmdk hidden role="dialog" aria-modal="true" aria-label="Search">
+  <div class="cmdk__backdrop" data-cmdk-close></div>
+  <div class="cmdk__panel">
+    <input type="search" class="cmdk__input"
+           data-cmdk-input
+           placeholder="Search docs…  (press Esc to close)"
+           autocomplete="off"
+           spellcheck="false">
+    <ul class="cmdk__results" data-cmdk-results></ul>
+    <p class="cmdk__hint">
+      <kbd>↑</kbd><kbd>↓</kbd> to navigate, <kbd>↵</kbd> to open, <kbd>Esc</kbd> to close.
+    </p>
+  </div>
+</div>
+<script>
+    (function () {
+      try {
+        var stored = localStorage.getItem("theme");
+        var prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+        var theme = stored || (prefersDark ? "dark" : "light");
+        document.documentElement.setAttribute("data-theme", theme);
+      } catch (_) {   }
+    })();
+  </script>
+</body>
+</html>

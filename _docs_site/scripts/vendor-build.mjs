@@ -3,7 +3,7 @@
 // NO CDN at runtime — every dependency must be installed locally via npm.
 //
 // Usage: node scripts/vendor-build.mjs
-// Output: assets/vendor/{theme,palette,waveform,search-palette}.js + manifest
+// Output: assets/vendor/{theme,palette,waveform,search-palette,diagrams}.js + manifest
 
 import { build } from "esbuild";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -36,6 +36,12 @@ const entries = [
   {
     name: "search-palette",
     entry: resolve(root, "assets/js/entry-search.js"),
+    target: "es2020",
+    minify: true,
+  },
+  {
+    name: "diagrams",
+    entry: resolve(root, "assets/js/entry-diagrams.js"),
     target: "es2020",
     minify: true,
   },

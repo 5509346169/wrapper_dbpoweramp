@@ -1,0 +1,9 @@
+<aside class="shell__right" aria-label="On this page">
+  {{- if and (not .Params.disableToc) (.TableOfContents) -}}
+    <div class="toc">
+      <p class="toc__label">On this page</p>
+      {{ .TableOfContents }}
+    </div>
+  {{- end -}}
+  {{- partial "version-selector.html" . -}}
+</aside>

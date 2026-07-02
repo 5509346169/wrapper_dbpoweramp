@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light"><script src="/wrapper_dbpoweramp/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=wrapper_dbpoweramp/livereload" data-no-instant defer></script><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f6f4ee" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f1216" media="(prefers-color-scheme: dark)">
+
+<title>Architecture — dBpoweramp Wrapper</title>
+<meta name="description" content="Pipeline architecture, component map, data flow, and concurrency model.">
+
+<link rel="canonical" href="http://localhost:1313/wrapper_dbpoweramp/architecture/">
+
+
+<link rel="preload" as="font" type="font/woff2" href="/assets/fonts/bodoni-moda-var.woff2" crossorigin>
+<link rel="preload" as="font" type="font/woff2" href="/assets/fonts/geist-var.woff2" crossorigin>
+<link rel="preload" as="font" type="font/woff2" href="/assets/fonts/jetbrains-mono-var.woff2" crossorigin>
+
+<link rel="stylesheet" href="/css/main.css">
+
+<script type="module" src="/assets/vendor/theme.js" defer></script>
+<script type="module" src="/assets/vendor/waveform.js" defer></script>
+<script type="module" src="/assets/vendor/search-palette.js" defer></script>
+<script type="module" src="/assets/vendor/diagrams.js" defer></script>
+<body class="theme-shell">
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div class="shell"><header class="shell__header">
+  <div class="header__inner">
+    <a class="header__brand" href="/">
+      <span class="header__mark">dB</span>
+      <span class="header__wordmark">dBpoweramp Wrapper</span>
+    </a>
+
+    <nav class="header__nav" aria-label="Sections"><a class="header__nav-item is-active"
+           href="/wrapper_dbpoweramp/architecture/">
+          Architecture
+        </a><a class="header__nav-item"
+           href="/wrapper_dbpoweramp/configuration/">
+          settings.yaml Reference
+        </a><a class="header__nav-item"
+           href="/wrapper_dbpoweramp/overview/">
+          Overview
+        </a><a class="header__nav-item"
+           href="/wrapper_dbpoweramp/engineering/">
+          Engineerings
+        </a><a class="header__nav-item"
+           href="/wrapper_dbpoweramp/getting-started/">
+          Getting-Starteds
+        </a><a class="header__nav-item"
+           href="/wrapper_dbpoweramp/reference/">
+          References
+        </a></nav>
+
+    <div class="header__actions">
+      <button class="header__cmd" type="button"
+              data-cmdk-open
+              aria-label="Open command palette (Ctrl/Cmd-K)">
+        <kbd>Ctrl</kbd><kbd>K</kbd>
+      </button>
+      <button class="header__theme" type="button"
+              data-theme-toggle
+              aria-label="Toggle dark mode">
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" fill="currentColor"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+</header>
+<aside class="shell__left sidebar" aria-label="Section navigation"><details class="sidebar__group open">
+      <summary class="sidebar__group-label">Architecture</summary>
+      <ul class="sidebar__list"><li>
+            <a class="sidebar__item"
+               href="/wrapper_dbpoweramp/architecture/workflow/">
+              Workflow
+            </a>
+          </li><li>
+            <a class="sidebar__item"
+               href="/wrapper_dbpoweramp/architecture/backends/">
+              Backends Reference
+            </a>
+          </li></ul>
+    </details><details class="sidebar__group">
+      <summary class="sidebar__group-label">settings.yaml Reference</summary>
+      <ul class="sidebar__list"><li>
+            <a class="sidebar__item"
+               href="/wrapper_dbpoweramp/configuration/cli/">
+              Command-Line Interface
+            </a>
+          </li><li>
+            <a class="sidebar__item"
+               href="/wrapper_dbpoweramp/configuration/presets/">
+              Presets Reference
+            </a>
+          </li></ul>
+    </details><details class="sidebar__group">
+      <summary class="sidebar__group-label">Overview</summary>
+      <ul class="sidebar__list"></ul>
+    </details><details class="sidebar__group">
+      <summary class="sidebar__group-label">Engineerings</summary>
+      <ul class="sidebar__list"><li>
+            <a class="sidebar__item"
+               href="/wrapper_dbpoweramp/engineering/file-index/">
+              File Index System
+            </a>
+          </li><li>
+            <a class="sidebar__item"
+               href="/wrapper_dbpoweramp/engineering/lossy-handling/">
+              Lossy Source Handling
+            </a>
+          </li><li>
+            <a class="sidebar__item"
+               href="/wrapper_dbpoweramp/engineering/sidecar-files/">
+              Sidecar Files
+            </a>
+          </li><li>
+            <a class="sidebar__item"
+               href="/wrapper_dbpoweramp/engineering/error-handling/">
+              Error Handling
+            </a>
+          </li><li>
+            <a class="sidebar__item"
+               href="/wrapper_dbpoweramp/engineering/testing/">
+              Testing
+            </a>
+          </li></ul>
+    </details><details class="sidebar__group">
+      <summary class="sidebar__group-label">Getting-Starteds</summary>
+      <ul class="sidebar__list"><li>
+            <a class="sidebar__item"
+               href="/wrapper_dbpoweramp/getting-started/installation/">
+              Installation
+            </a>
+          </li></ul>
+    </details><details class="sidebar__group">
+      <summary class="sidebar__group-label">References</summary>
+      <ul class="sidebar__list"><li>
+            <a class="sidebar__item"
+               href="/wrapper_dbpoweramp/reference/api/">
+              Public API Reference
+            </a>
+          </li><li>
+            <a class="sidebar__item"
+               href="/wrapper_dbpoweramp/reference/modules/">
+              Module Reference
+            </a>
+          </li></ul>
+    </details></aside>
+<main id="main" class="shell__main"><div class="prose">
+  <p>This document describes how dBpoweramp Wrapper is structured internally. It is aimed at developers who want to understand, extend, or debug the tool. End users should start with <a href="https://github.com/5509346169/wrapper_dbpoweramp/blob/main/README.md">README</a> and the <a href="/wrapper_dbpoweramp/">landing page</a>.</p>
+<h2 id="high-level-system-overview">High-level system overview</h2>
+<p>The tool is a pipeline: it scans a directory tree, classifies each file, then converts (or copies) them in parallel. Two SQLite databases and an event queue provide coordination.</p>
+<p>The pipeline flow:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>CLI Args → Config Loader → Index Scanner → Job Builder → Execution Runner
+</span></span><span style="display:flex;"><span>                              ↓
+</span></span><span style="display:flex;"><span>                        Audio Inspector (lossy detection)
+</span></span><span style="display:flex;"><span>                              ↓
+</span></span><span style="display:flex;"><span>                        History DB (resume tracking)
+</span></span></code></pre></div><h2 id="component-map">Component map</h2>
+<h3 id="mainpy"><code>main.py</code></h3>
+<p><code>main.py</code> is a ≤ 60-line dispatcher that builds an <code>AppContext</code> (see <code>src/app/context.py</code>) and hands off to <code>src/app/commands/{build_index,run_from_index,run_pipeline,dry_run,list_lossy,db_check,db_migrate}.py</code>. The dispatcher routes based on the parsed <code>argparse</code> Namespace:</p>
+<ul>
+<li><code>--db-version</code> flag set → <code>db_check.run(args)</code> (prints and exits)</li>
+<li><code>args.command == &quot;db&quot;</code> → <code>db_check.run(args)</code> / <code>db_migrate.run(args)</code> (subcommand dispatch)</li>
+<li><code>--build-index</code> set → <code>build_index.run(ctx)</code></li>
+<li><code>--index</code> set → <code>run_from_index.run(ctx)</code></li>
+<li>Otherwise → <code>run_pipeline.run(ctx)</code></li>
+</ul>
+<h3 id="srcconfig"><code>src/config/</code></h3>
+<table>
+	<thead>
+			<tr>
+					<th>File</th>
+					<th>Responsibility</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td><code>models.py</code></td>
+					<td>Typed dataclasses mirroring the <code>settings.yaml</code> schema</td>
+			</tr>
+			<tr>
+					<td><code>settings_loader.py</code></td>
+					<td>Parses <code>settings.yaml</code> into <code>Settings</code> objects; validates required keys</td>
+			</tr>
+			<tr>
+					<td><code>preset_loader.py</code></td>
+					<td>Parses <code>presets.yaml</code> into <code>PresetConfig</code> objects</td>
+			</tr>
+	</tbody>
+</table>
+<h3 id="srcapp"><code>src/app/</code></h3>
+<p>Post-refactor application structure. All modules are internal.</p>
+<table>
+	<thead>
+			<tr>
+					<th>File</th>
+					<th>Responsibility</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td><code>context.py</code></td>
+					<td><code>AppContext</code> frozen dataclass + <code>build_context(args)</code> factory</td>
+			</tr>
+			<tr>
+					<td><code>backend.py</code></td>
+					<td><code>_resolve_backend_name()</code> + <code>supports()</code> compatibility gate</td>
+			</tr>
+			<tr>
+					<td><code>lifecycle/signals.py</code></td>
+					<td><code>SignalGuard</code> context manager for SIGINT/SIGTERM</td>
+			</tr>
+			<tr>
+					<td><code>lifecycle/tempdir.py</code></td>
+					<td><code>tmp/</code> directory lifecycle</td>
+			</tr>
+			<tr>
+					<td><code>lifecycle/scan_cache.py</code></td>
+					<td>Scan cache open/close wrapper</td>
+			</tr>
+			<tr>
+					<td><code>pipeline/scan.py</code></td>
+					<td><code>scan_with_progress</code> / <code>load_rows_from_cache</code> orchestration</td>
+			</tr>
+			<tr>
+					<td><code>pipeline/enrich.py</code></td>
+					<td>Calls <code>src/jobs/enrich.py</code> for lossy probe</td>
+			</tr>
+			<tr>
+					<td><code>pipeline/jobs.py</code></td>
+					<td><code>_row_to_job</code> + lossy-gate check</td>
+			</tr>
+			<tr>
+					<td><code>pipeline/prefilter.py</code></td>
+					<td><code>should_skip</code> loop + pre-verify gate (<code>--verify-skip</code>)</td>
+			</tr>
+			<tr>
+					<td><code>pipeline/phases.py</code></td>
+					<td><code>_run_jobs_by_phase</code> (phased execution mode)</td>
+			</tr>
+			<tr>
+					<td><code>pipeline/execute.py</code></td>
+					<td>Verbose/Rich sink + <code>run_all</code> loop + futures draining</td>
+			</tr>
+			<tr>
+					<td><code>pipeline/reporting.py</code></td>
+					<td>Final &ldquo;Done. Success: &hellip;&rdquo; summary + <code>_format_bytes</code></td>
+			</tr>
+			<tr>
+					<td><code>commands/build_index.py</code></td>
+					<td><code>cmd_build_index(ctx)</code></td>
+			</tr>
+			<tr>
+					<td><code>commands/run_from_index.py</code></td>
+					<td><code>cmd_run_from_index(ctx)</code></td>
+			</tr>
+			<tr>
+					<td><code>commands/run_pipeline.py</code></td>
+					<td>Main scan + enrich + execute flow</td>
+			</tr>
+			<tr>
+					<td><code>commands/dry_run.py</code></td>
+					<td><code>--dry-run</code> handling</td>
+			</tr>
+			<tr>
+					<td><code>commands/list_lossy.py</code></td>
+					<td><code>--list-lossy</code> handling</td>
+			</tr>
+			<tr>
+					<td><code>commands/db_check.py</code></td>
+					<td><code>db check</code> / <code>--db-version</code> entry point</td>
+			</tr>
+			<tr>
+					<td><code>commands/db_migrate.py</code></td>
+					<td><code>db migrate</code> entry point</td>
+			</tr>
+	</tbody>
+</table>
+<h3 id="srccli"><code>src/cli/</code></h3>
+<table>
+	<thead>
+			<tr>
+					<th>File</th>
+					<th>Responsibility</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td><code>args.py</code></td>
+					<td><code>parse_args()</code> — <code>argparse</code> parser for all CLI flags. <code>validate_args()</code> — cross-flag consistency checks. Also owns the <code>db</code> subcommand group</td>
+			</tr>
+			<tr>
+					<td><code>db_cmd.py</code></td>
+					<td><code>cmd_db_check()</code>, <code>cmd_db_migrate()</code>, <code>cmd_db_doctor()</code> — dispatchers for the <code>db</code> subcommand group</td>
+			</tr>
+	</tbody>
+</table>
+<h3 id="srcaudio"><code>src/audio/</code></h3>
+<p>Lossy source detection cascade. Each file is evaluated through three tiers in sequence:</p>
+<table>
+	<thead>
+			<tr>
+					<th>Module</th>
+					<th>Tier</th>
+					<th>How it decides</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td><code>extensions.py</code></td>
+					<td>1 — Extension</td>
+					<td>Unambiguous extensions (<code>.mp3</code>, <code>.aac</code>, <code>.ogg</code>, <code>.opus</code> → lossy; <code>.flac</code>, <code>.wav</code>, <code>.wv</code>, <code>.ape</code>, <code>.tta</code> → lossless). Returns immediately if the extension is in the known list</td>
+			</tr>
+			<tr>
+					<td><code>folder_heuristic.py</code></td>
+					<td>2 — Folder name</td>
+					<td>Looks for lossy tokens (<code>mp3</code>, <code>aac</code>, <code>m4a</code>, <code>ogg</code>, <code>opus</code>) in any parent directory name. Handles cases like <code>~/Music/MP3/track.flac</code> where the file extension is ambiguous</td>
+			</tr>
+			<tr>
+					<td><code>mutagen_probe.py</code></td>
+					<td>3 — Metadata</td>
+					<td>Reads the audio stream codec tag via <code>mutagen</code>. Called only for ambiguous extensions (<code>.m4a</code>, <code>.mp4</code>, <code>.wav</code>) that tier 1 and 2 could not resolve</td>
+			</tr>
+			<tr>
+					<td><code>integrity.py</code></td>
+					<td>Post-convert verifier</td>
+					<td><code>VerifyStatus</code> enum, <code>VerifyResult</code> dataclass, <code>verify_file()</code> dispatcher</td>
+			</tr>
+			<tr>
+					<td><code>verify_backends.py</code></td>
+					<td>Integrity check implementations</td>
+					<td><code>_verify_soundfile</code> (libsndfile full-frame decode + FLAC MD5 + truncation guard), <code>_verify_miniaudio</code> (streaming decode), <code>_verify_mutagen</code> (tag sanity only, last-resort fallback)</td>
+			</tr>
+	</tbody>
+</table>
+<p>The cascade is implemented in <code>cascade.py</code>. Tiers are tried per file — not in three sequential phases — so all worker threads stay busy throughout the probe phase regardless of the workload mix.</p>
+<h3 id="srcindex"><code>src/index/</code></h3>
+<table>
+	<thead>
+			<tr>
+					<th>File</th>
+					<th>Responsibility</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td><code>scanner.py</code></td>
+					<td><code>_discover_audio_files()</code> — iterative DFS walk using <code>os.scandir</code> (avoids double-stat on Windows). <code>scan_with_progress()</code> — walks, collects stats and sidecar candidates, optionally populates the scan cache. Returns <code>IndexRow</code> objects</td>
+			</tr>
+			<tr>
+					<td><code>scan_cache.py</code></td>
+					<td>A small per-run SQLite snapshot of the scan results. On repeat runs against the same input+excludes, the scan phase loads from this cache instead of walking the filesystem</td>
+			</tr>
+			<tr>
+					<td><code>builder.py</code></td>
+					<td><code>IndexBuilder</code> — writes <code>IndexRow</code> objects into <code>tmp/index.db</code> (the temp index), commits, and provides <code>iter_rows()</code> and <code>get_summary()</code> for consumers</td>
+			</tr>
+			<tr>
+					<td><code>cleanup.py</code></td>
+					<td><code>cleanup_index()</code> — deletes <code>tmp/index.db</code> on clean exit; preserves it on failure or interrupt so it can be inspected with <code>sqlite3</code>. Called from the <code>finally:</code> block in <code>main._main()</code></td>
+			</tr>
+	</tbody>
+</table>
+<p><strong>Temp index schema</strong> (<code>tmp/index.db</code>):</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-sql" data-lang="sql"><span style="display:flex;"><span><span style="color:#66d9ef">CREATE</span> <span style="color:#66d9ef">TABLE</span> index_entries (
+</span></span><span style="display:flex;"><span>    id           INTEGER <span style="color:#66d9ef">PRIMARY</span> <span style="color:#66d9ef">KEY</span> AUTOINCREMENT,
+</span></span><span style="display:flex;"><span>    source_path  TEXT <span style="color:#66d9ef">NOT</span> <span style="color:#66d9ef">NULL</span>,
+</span></span><span style="display:flex;"><span>    dest_path    TEXT <span style="color:#66d9ef">NOT</span> <span style="color:#66d9ef">NULL</span>,
+</span></span><span style="display:flex;"><span>    job_type     TEXT <span style="color:#66d9ef">NOT</span> <span style="color:#66d9ef">NULL</span>,
+</span></span><span style="display:flex;"><span>    file_size    INTEGER <span style="color:#66d9ef">NOT</span> <span style="color:#66d9ef">NULL</span>,
+</span></span><span style="display:flex;"><span>    sidecar_files TEXT <span style="color:#66d9ef">NOT</span> <span style="color:#66d9ef">NULL</span>,
+</span></span><span style="display:flex;"><span>    mtime        REAL <span style="color:#66d9ef">NOT</span> <span style="color:#66d9ef">NULL</span>,
+</span></span><span style="display:flex;"><span>    is_lossy     INTEGER,
+</span></span><span style="display:flex;"><span>    created_at   TEXT <span style="color:#66d9ef">NOT</span> <span style="color:#66d9ef">NULL</span>
+</span></span><span style="display:flex;"><span>);
+</span></span></code></pre></div><h3 id="srcjobs"><code>src/jobs/</code></h3>
+<table>
+	<thead>
+			<tr>
+					<th>File</th>
+					<th>Responsibility</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td><code>classify.py</code></td>
+					<td><code>classify()</code> — for each <code>IndexRow</code>, decides <code>job_type</code> (<code>convert</code>, <code>copy</code>, or <code>skip</code>) based on lossy status and the user&rsquo;s <code>--lossy-action</code>. Also fills in <code>dest_path</code> via <code>compute_output_path</code></td>
+			</tr>
+			<tr>
+					<td><code>enrich.py</code></td>
+					<td><code>enrich_index_rows()</code> and <code>enrich_index_rows_streaming()</code> — orchestrate the lossy probe across <code>probe_workers</code> threads, streaming results back to the caller so <code>IndexBuilder</code> can write rows in real time</td>
+			</tr>
+			<tr>
+					<td><code>build_jobs.py</code></td>
+					<td><code>build_jobs()</code> — converts enriched <code>IndexRow</code> objects into <code>ConversionJob</code> namedtuples, applying the resume pre-filter against <code>conversion_history.db</code></td>
+			</tr>
+	</tbody>
+</table>
+<h3 id="srcbackends"><code>src/backends/</code></h3>
+<p>Abstract base class + three concrete implementations. The <code>ConversionBackend</code> ABC defines <code>convert()</code>, <code>copy()</code>, <code>verify()</code>, <code>supports()</code>, and <code>validate_environment()</code>. The <code>validate_environment()</code> call is made fail-fast at startup (before any file is touched): missing binaries or Wine prefix raise <code>BackendError</code> immediately.</p>
+<ul>
+<li><strong><code>base.py</code></strong> — <code>ConversionBackend</code> ABC.</li>
+<li><strong><code>registry.py</code></strong> — <code>get_backend()</code>, <code>detect_backend_for_run()</code>, <code>resolve_backend_for_run()</code>. Picks the backend using this priority: CLI override (<code>--backend</code>) &gt; auto-detect (Windows + dBpoweramp installed + preset supports it) &gt; <code>backend.default</code> in <code>settings.yaml</code>.</li>
+<li><strong><code>native_ffmpeg.py</code></strong> — invokes <code>ffmpeg</code> / <code>flac</code> / <code>lame</code> / <code>opusenc</code> directly.</li>
+<li><strong><code>native_dbpoweramp.py</code></strong> — invokes <code>CoreConverter.exe</code> directly (Windows only).</li>
+<li><strong><code>wine_dbpoweramp.py</code></strong> — translates paths via <code>winepath -w</code> before invoking <code>CoreConverter.exe</code> via <code>wine</code>.</li>
+</ul>
+<h3 id="srcexecution"><code>src/execution/</code></h3>
+<table>
+	<thead>
+			<tr>
+					<th>File</th>
+					<th>Responsibility</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td><code>run_job.py</code></td>
+					<td><code>run_job()</code> — single-job worker. Dispatches to <code>backend.convert()</code>, <code>backend.copy()</code>, or a no-op for <code>skip</code> jobs. Calls <code>backend.verify()</code> before marking SUCCESS. Pushes log lines to the event queue</td>
+			</tr>
+			<tr>
+					<td><code>run_all.py</code></td>
+					<td><code>run_all()</code> — top-level orchestrator. Creates a <code>ThreadPoolExecutor</code> or <code>ProcessPoolExecutor</code>, submits all jobs, starts the event-drain thread, and returns a summary</td>
+			</tr>
+			<tr>
+					<td><code>events.py</code></td>
+					<td><code>JobEventKind</code> enum (<code>LOG</code>, <code>STARTED</code>, <code>FINISHED</code>) and helpers <code>_make_event_queue()</code>, <code>_build_stream_callback()</code>, <code>_push_log_event()</code></td>
+			</tr>
+			<tr>
+					<td><code>event_drain.py</code></td>
+					<td><code>_drain_events_into_ui()</code> and <code>_run_event_drain_thread()</code> — background thread that reads from the event queue and forwards log lines to the progress sink. Runs for the duration of <code>run_all()</code> so Rich is never called from a worker thread</td>
+			</tr>
+	</tbody>
+</table>
+<h3 id="srchistory"><code>src/history/</code></h3>
+<table>
+	<thead>
+			<tr>
+					<th>File</th>
+					<th>Responsibility</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td><code>schema.py</code></td>
+					<td>Shared <code>CREATE TABLE</code> and PRAGMA statements for both the history DB and the scan cache DB. Both use WAL mode and a 5-second busy timeout</td>
+			</tr>
+			<tr>
+					<td><code>conversion_db.py</code></td>
+					<td><code>ConversionDB</code> — synchronous read/write wrapper around <code>conversion_history.db</code>. <code>should_skip()</code> checks source+dest+job_type and file size to decide whether to skip a job on resume. <code>__init__</code> auto-runs <code>migrate_to_current()</code> on first open. <code>log_conversion</code> accepts optional <code>verify_status</code>, <code>verify_reason</code>, <code>verify_format</code>, <code>verify_duration_s</code> kwargs</td>
+			</tr>
+			<tr>
+					<td><code>write_queue.py</code></td>
+					<td><code>DBWriteQueue</code> — async writer. Workers push log entries to a <code>queue.Queue</code>; a dedicated background thread drains them and writes to the DB. Eliminates concurrent write contention. Callers must call <code>flush()</code> before exit</td>
+			</tr>
+			<tr>
+					<td><code>migrations.py</code></td>
+					<td>Schema versioning and migration orchestration. Owns <code>SCHEMA_VERSION</code> (current = 2), <code>MIGRATIONS</code> list, <code>migrate_to_current()</code>, <code>get_db_version()</code>, and <code>DbVersionInfo</code> dataclass. Creates <code>&lt;db&gt;.bak-&lt;UTCISO&gt;</code> before the first schema change and writes a <code>migration_audit</code> row after each step</td>
+			</tr>
+	</tbody>
+</table>
+<h3 id="srcsidecars"><code>src/sidecars/</code></h3>
+<table>
+	<thead>
+			<tr>
+					<th>File</th>
+					<th>Responsibility</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td><code>manager.py</code></td>
+					<td><code>SidecarManager</code> — reads the <code>sidecars</code> block from the preset. <code>_copy_sidecars()</code> copies lyric files (<code>.lrc</code>, <code>.txt</code>) and cover art (<code>.jpg</code>, <code>.png</code>) from each source file&rsquo;s directory to its destination, optionally renaming covers to dot-prefix (<code>.cover.jpg</code>) for privacy</td>
+			</tr>
+	</tbody>
+</table>
+<h3 id="srcui"><code>src/ui/</code></h3>
+<table>
+	<thead>
+			<tr>
+					<th>File</th>
+					<th>Responsibility</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td><code>progress_view.py</code></td>
+					<td><code>ProgressSink</code> ABC and three concrete implementations: <code>RichProgressSink</code> (live progress bar with byte counter), <code>VerboseProgressSink</code> (plain terminal output), <code>NullProgressSink</code> (no-op)</td>
+			</tr>
+			<tr>
+					<td><code>progress/protocol.py</code></td>
+					<td><code>ProgressSink</code> protocol definition</td>
+			</tr>
+			<tr>
+					<td><code>progress/renderer.py</code></td>
+					<td><code>RichProgressRenderer</code> — constructs the Rich <code>Progress</code> object with columns: task name, progress bar, file count, byte counter</td>
+			</tr>
+			<tr>
+					<td><code>progress/rich_sink.py</code></td>
+					<td><code>RichProgressSink</code> implementation. Manages phase transitions (<code>start_phase</code>, <code>stop_phase</code>, <code>advance</code>, <code>log_file</code>) and subtask bars for per-file live output</td>
+			</tr>
+			<tr>
+					<td><code>progress/verbose_sink.py</code></td>
+					<td><code>VerboseProgressSink</code> implementation. Plain <code>print()</code> calls with phase headers</td>
+			</tr>
+			<tr>
+					<td><code>progress/null_sink.py</code></td>
+					<td><code>NullProgressSink</code> — all methods are no-ops. Used in <code>--verbose</code> mode when no progress bar is desired</td>
+			</tr>
+	</tbody>
+</table>
+<h2 id="data-flow-scan-to-conversion">Data flow: scan to conversion</h2>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>Input directory
+</span></span><span style="display:flex;"><span>    │
+</span></span><span style="display:flex;"><span>    │  _discover_audio_files()
+</span></span><span style="display:flex;"><span>    │  (os.scandir iterative DFS, excludes matched on dir basename)
+</span></span><span style="display:flex;"><span>    │
+</span></span><span style="display:flex;"><span>    ▼
+</span></span><span style="display:flex;"><span>List[ (Path, size, mtime) ]
+</span></span><span style="display:flex;"><span>    │
+</span></span><span style="display:flex;"><span>    │  scan_with_progress()
+</span></span><span style="display:flex;"><span>    │  (collects sidecar basenames, writes to ScanCache if enabled)
+</span></span><span style="display:flex;"><span>    │
+</span></span><span style="display:flex;"><span>    ▼
+</span></span><span style="display:flex;"><span>List[IndexRow]  ──────► ScanCache (tmp/scan_cache_*.db)
+</span></span><span style="display:flex;"><span>    │                        (reused on next run to skip dir walk)
+</span></span><span style="display:flex;"><span>    │
+</span></span><span style="display:flex;"><span>    │  enrich_index_rows_streaming()
+</span></span><span style="display:flex;"><span>    │  (lossy cascade per file, dest_path, job_type, writes to...)
+</span></span><span style="display:flex;"><span>    │
+</span></span><span style="display:flex;"><span>    ▼
+</span></span><span style="display:flex;"><span>tmp/index.db  (IndexBuilder)
+</span></span><span style="display:flex;"><span>    │
+</span></span><span style="display:flex;"><span>    │  IndexBuilder.iter_rows()
+</span></span><span style="display:flex;"><span>    │  (re-read from SQLite as the single source of truth)
+</span></span><span style="display:flex;"><span>    │
+</span></span><span style="display:flex;"><span>    ▼
+</span></span><span style="display:flex;"><span>List[IndexRow]  ──────► ConversionDB.should_skip()
+</span></span><span style="display:flex;"><span>    │                        (resume pre-filter: checks history + file size)
+</span></span><span style="display:flex;"><span>    │
+</span></span><span style="display:flex;"><span>    ▼
+</span></span><span style="display:flex;"><span>List[ConversionJob]
+</span></span><span style="display:flex;"><span>    │
+</span></span><span style="display:flex;"><span>    │  run_all() → Thread/ProcessPoolExecutor
+</span></span><span style="display:flex;"><span>    │
+</span></span><span style="display:flex;"><span>    ├─► backend.convert()  →  output file
+</span></span><span style="display:flex;"><span>    │                             │
+</span></span><span style="display:flex;"><span>    │        ┌─ Pre-verify gate (--verify-skip) ──► demote corrupt skip → pending_jobs
+</span></span><span style="display:flex;"><span>    │        │
+</span></span><span style="display:flex;"><span>    │        └─ Post-convert verify (--verify-output full) ──► NOT_OK → job marked FAILED
+</span></span><span style="display:flex;"><span>    │                                          └─ OK / UNSUPPORTED ──► history log
+</span></span><span style="display:flex;"><span>    │
+</span></span><span style="display:flex;"><span>    ├─► backend.copy()
+</span></span><span style="display:flex;"><span>    └─► (skip — no-op)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>DB version inspection (db check / --db-version) — side-branch from entry point, no file operations
+</span></span></code></pre></div><h2 id="concurrency-model">Concurrency model</h2>
+<h3 id="thread-pool-default">Thread pool (default)</h3>
+<p><code>worker_model: &quot;thread&quot;</code> uses a <code>ThreadPoolExecutor</code>. All conversion backends (<code>native_ffmpeg</code>, <code>native_dbpoweramp</code>, <code>wine_dbpoweramp</code>) are subprocess-based — they invoke an external binary — so the GIL is not a bottleneck. Threads are appropriate for I/O-bound work.</p>
+<h3 id="process-pool">Process pool</h3>
+<p><code>worker_model: &quot;process&quot;</code> uses a <code>ProcessPoolExecutor</code>. Required when the Python process must be isolated from the workers, or when the backend is CPU-bound (not the case here, but available for future backends).</p>
+<h3 id="event-queue-never-touch-rich-from-a-worker">Event queue (never touch Rich from a worker)</h3>
+<p>Workers cannot call Rich directly (it is not thread-safe from outside the main thread). Instead, each worker pushes <code>(JobEventKind, payload)</code> tuples onto a <code>queue.Queue</code>. A single background drain thread reads from the queue and forwards log lines to the progress sink. This means every worker thread stays productive — there is no synchronization bottleneck at the UI layer.</p>
+<h3 id="async-history-writes">Async history writes</h3>
+<p><code>DBWriteQueue</code> uses the same producer/queue/consumer pattern: workers push log records, and a dedicated thread writes them to <code>conversion_history.db</code>. Without this, concurrent workers writing to the same SQLite file would generate <code>SQLITE_BUSY</code> errors. WAL mode + a 5-second busy timeout mitigate this at the DB level, but the queue eliminates contention entirely.</p>
+<h3 id="probe-phase-parallelism">Probe phase parallelism</h3>
+<p>The lossy probe runs in a separate thread pool (<code>probe_workers</code>, default 16). Each probe thread walks its assigned file through the cascade independently, so a file that needs mutagen (Tier 3) does not stall files that resolved via extension (Tier 1). Results are streamed back to the main thread as they arrive.</p>
+<h2 id="three-database-files">Three database files</h2>
+<table>
+	<thead>
+			<tr>
+					<th>Database</th>
+					<th>Location</th>
+					<th>When created</th>
+					<th>When deleted</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td><code>tmp/index.db</code></td>
+					<td><code>tmp/index.db</code></td>
+					<td>Every run (before lossy gate)</td>
+					<td>Deleted on clean exit; preserved on failure or interrupt</td>
+			</tr>
+			<tr>
+					<td><code>tmp/scan_cache_*.db</code></td>
+					<td><code>tmp/</code></td>
+					<td>On every run that walks the directory</td>
+					<td>Never (reused on next run against same input+excludes)</td>
+			</tr>
+			<tr>
+					<td><code>conversion_history.db</code></td>
+					<td>From <code>settings.yaml</code> (default: project root)</td>
+					<td>On first conversion</td>
+					<td>Never</td>
+			</tr>
+	</tbody>
+</table>
+<h2 id="backend-abstraction">Backend abstraction</h2>
+<p>The <code>ConversionBackend</code> ABC enforces a clean contract. Each backend:</p>
+<ol>
+<li><strong>Validates its environment</strong> at instantiation (<code>validate_environment()</code>) — fail-fast, before any file is touched. Missing binaries or Wine prefix raise immediately.</li>
+<li><strong>Declares preset compatibility</strong> via <code>supports(preset)</code> — checked at startup before any work begins.</li>
+<li><strong>Implements <code>convert()</code></strong> and <code>copy()</code> using the same calling convention, so the executor is backend-agnostic.</li>
+<li><strong>Implements <code>verify()</code></strong> — checks output file exists and is non-zero size. This guards against silent failures where the external tool exits 0 but produced nothing.</li>
+</ol>
+<p>The registry (<code>registry.py</code>) owns backend selection logic. It is the only module that knows about all three backends; the rest of the system imports only the ABC.</p>
+
+</div></main><aside class="shell__right" aria-label="On this page"><div class="toc">
+      <p class="toc__label">On this page</p>
+      <nav id="TableOfContents">
+  <ul>
+    <li><a href="#high-level-system-overview">High-level system overview</a></li>
+    <li><a href="#component-map">Component map</a>
+      <ul>
+        <li><a href="#mainpy"><code>main.py</code></a></li>
+        <li><a href="#srcconfig"><code>src/config/</code></a></li>
+        <li><a href="#srcapp"><code>src/app/</code></a></li>
+        <li><a href="#srccli"><code>src/cli/</code></a></li>
+        <li><a href="#srcaudio"><code>src/audio/</code></a></li>
+        <li><a href="#srcindex"><code>src/index/</code></a></li>
+        <li><a href="#srcjobs"><code>src/jobs/</code></a></li>
+        <li><a href="#srcbackends"><code>src/backends/</code></a></li>
+        <li><a href="#srcexecution"><code>src/execution/</code></a></li>
+        <li><a href="#srchistory"><code>src/history/</code></a></li>
+        <li><a href="#srcsidecars"><code>src/sidecars/</code></a></li>
+        <li><a href="#srcui"><code>src/ui/</code></a></li>
+      </ul>
+    </li>
+    <li><a href="#data-flow-scan-to-conversion">Data flow: scan to conversion</a></li>
+    <li><a href="#concurrency-model">Concurrency model</a>
+      <ul>
+        <li><a href="#thread-pool-default">Thread pool (default)</a></li>
+        <li><a href="#process-pool">Process pool</a></li>
+        <li><a href="#event-queue-never-touch-rich-from-a-worker">Event queue (never touch Rich from a worker)</a></li>
+        <li><a href="#async-history-writes">Async history writes</a></li>
+        <li><a href="#probe-phase-parallelism">Probe phase parallelism</a></li>
+      </ul>
+    </li>
+    <li><a href="#three-database-files">Three database files</a></li>
+    <li><a href="#backend-abstraction">Backend abstraction</a></li>
+  </ul>
+</nav>
+    </div><label class="version-selector">
+  <span class="version-selector__label">Version</span>
+  <select class="version-selector__select" data-version-select><option value="/wrapper_dbpoweramp/" selected>
+        0.1.0 — 2026-06-28
+      </option></select>
+</label></aside>
+</div><footer class="site-footer">
+  <div class="site-footer__inner">
+    <p>
+      <span class="site-footer__brand">dBpoweramp Wrapper</span>
+      <span class="site-footer__sep">·</span>
+      <a href="https://github.com/5509346169/wrapper_dbpoweramp">Source on GitHub</a>
+    </p>
+    <p class="site-footer__tagline">Audiophile-grade audio conversion, on your terms.</p>
+  </div>
+</footer>
+<div class="cmdk" data-cmdk hidden role="dialog" aria-modal="true" aria-label="Search">
+  <div class="cmdk__backdrop" data-cmdk-close></div>
+  <div class="cmdk__panel">
+    <input type="search" class="cmdk__input"
+           data-cmdk-input
+           placeholder="Search docs…  (press Esc to close)"
+           autocomplete="off"
+           spellcheck="false">
+    <ul class="cmdk__results" data-cmdk-results></ul>
+    <p class="cmdk__hint">
+      <kbd>↑</kbd><kbd>↓</kbd> to navigate, <kbd>↵</kbd> to open, <kbd>Esc</kbd> to close.
+    </p>
+  </div>
+</div>
+<script>
+    (function () {
+      try {
+        var stored = localStorage.getItem("theme");
+        var prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+        var theme = stored || (prefersDark ? "dark" : "light");
+        document.documentElement.setAttribute("data-theme", theme);
+      } catch (_) {   }
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+{{- with hugo.Data.versions -}}
+{{- if gt (len .) 0 -}}
+<label class="version-selector">
+  <span class="version-selector__label">Version</span>
+  <select class="version-selector__select" data-version-select>
+    {{- range . -}}
+      <option value="{{ .url }}"{{ if .current }} selected{{ end }}>
+        {{ .version }} — {{ .date }}
+      </option>
+    {{- end -}}
+  </select>
+</label>
+{{- end -}}
+{{- end -}}

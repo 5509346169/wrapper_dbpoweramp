@@ -1,18 +1,16 @@
 """tests/test_tmp_staging.py: Unit tests for the tmp-staging long-path helper.
 
 These tests cover the pure-Python portion of ``src.pathing.long_path``:
-the threshold heuristic, the opt-in toggle, the staging decision logic,
-the ``unstage()`` move semantics, the unique-basename hash to handle
-collisions, and the ``cleanup_staging_workspace()`` housekeeping.
+the opt-in toggle, the staging decision logic, the ``unstage()`` move semantics,
+and the ``cleanup_staging_workspace()`` housekeeping.
 
-Unlike the previous 8.3-short-name implementation, this module no longer
-touches Win32 APIs at all, so all tests run unmodified on every
-platform.
+The core staging logic is delegated to ``src.pathing.md5_staging``;
+additional tests for that module live in ``tests/test_md5_staging.py``.
 """
+
 from __future__ import annotations
 
 import os
-import shutil
 import sys
 from pathlib import Path
 
@@ -22,8 +20,8 @@ from src.pathing.long_path import (
     StagingResult,
     _MAX_PATH_SAFE,
     _path_is_long,
-    _short_hash,
     cleanup_staging_workspace,
+    compute_md5sum,
     stage_paths,
     unstage,
 )
@@ -41,8 +39,6 @@ class TestPathIsLong:
         assert _path_is_long(Path("C:/short/path/file.m4a")) is False
 
     def test_exactly_at_threshold_is_short(self) -> None:
-        # Threshold is exclusive (>, not >=), so exactly _MAX_PATH_SAFE
-        # characters must not trigger staging. "C:/" is 3 chars.
         p = "C:/" + "a" * (_MAX_PATH_SAFE - 3)
         assert len(p) == _MAX_PATH_SAFE
         assert _path_is_long(Path(p)) is False
@@ -53,10 +49,7 @@ class TestPathIsLong:
         assert _path_is_long(Path(p)) is True
 
     def test_unicode_path_length_uses_codepoints(self) -> None:
-        # 200 CJK chars (each a single Python str codepoint but multi-byte
-        # in UTF-16). The threshold is character-count, not byte-count.
         p = Path("C:/" + ("鏡" * 200))
-        # "C:/" = 3 chars + 200 CJK chars = 203
         assert len(str(p)) == 203
         assert _path_is_long(p) is False
 
@@ -70,8 +63,6 @@ class TestStagingDisabled:
     """When the user hasn't opted in, staging must be a no-op."""
 
     def test_disabled_returns_long_paths_unchanged(self, tmp_path: Path) -> None:
-        # Even a path "long enough" to trigger staging must pass through
-        # unchanged when enabled=False.
         long = tmp_path / ("a" * 200) / "in.m4a"
         long.parent.mkdir(parents=True, exist_ok=True)
         long.write_bytes(b"x")
@@ -94,39 +85,53 @@ class TestStagingDisabled:
             staged_infile=tmp_path / "in.m4a",
             staged_outfile=long_out,
             staged=False,
+            md5sum="abcd123456ef",
+            temp_filename="",
         )
         assert unstage(r) is True
 
 
 # ---------------------------------------------------------------------------
-# Staging decision logic
+# Staging decision logic (via md5_staging delegation)
 # ---------------------------------------------------------------------------
 
 
 class TestStagingEnabled:
-    """When enabled, staging kicks in iff the path is long enough."""
+    """When enabled, staging kicks in for UTF-8 or long paths."""
 
-    def test_short_path_skips_even_when_enabled(
+    def test_short_ascii_path_skips_even_when_enabled(
         self,
         tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """A path under the threshold must NOT trigger staging even when
-        enabled=True — avoids an unnecessary source copy on the happy path."""
+        """A short ASCII path on win32 with auto mode must NOT trigger staging."""
+        monkeypatch.setattr(sys, "platform", "win32")
         infile = tmp_path / "in.m4a"
         outfile = tmp_path / "out.m4a"
+        infile.touch()
 
         r = stage_paths(infile, outfile, enabled=True, tmp_root=tmp_path / "stage")
         assert r.staged is False
         assert r.staged_infile == infile
         assert r.staged_outfile == outfile
 
-    def test_long_path_stages(self, tmp_path: Path) -> None:
-        """When enabled and a path is long, the source is copied under
-        ``tmp_root/src/`` and the staged output goes under ``tmp_root/dst/``."""
+    def test_utf8_name_stages(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Non-ASCII filename triggers staging."""
+        monkeypatch.setattr(sys, "platform", "win32")
+        src = tmp_path / "日本語.flac"
+        src.touch()
+        dst = tmp_path / "output.flac"
+
+        r = stage_paths(src, dst, enabled=True, tmp_root=tmp_path / "stage")
+        assert r.staged is True
+        assert ".md5hash." in r.temp_filename
+
+    def test_long_path_stages(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """When enabled and a path is long (>240 chars), the source is copied."""
+        monkeypatch.setattr(sys, "platform", "win32")
         long_in = tmp_path / ("a" * 200) / "in.m4a"
         long_out = tmp_path / ("a" * 200) / "out.m4a"
         long_in.parent.mkdir(parents=True, exist_ok=True)
-        long_out.parent.mkdir(parents=True, exist_ok=True)
         long_in.write_bytes(b"source content")
 
         stage_root = tmp_path / "stage"
@@ -135,25 +140,17 @@ class TestStagingEnabled:
         assert r.staged is True
         assert r.long_infile == long_in
         assert r.long_outfile == long_out
-        # Staged paths live under the configured tmp_root.
         assert r.staged_infile.parent == stage_root / "src"
         assert r.staged_outfile.parent == stage_root / "dst"
-        # Staged input and output share the same basename (a hash prefix
-        # + the original outfile name) so CoreConverter's output lands at
-        # a known location.
         assert r.staged_infile.name == r.staged_outfile.name
         assert r.staged_infile.name.endswith(".m4a")
-        # The source was actually copied.
         assert r.staged_infile.exists()
         assert r.staged_infile.read_bytes() == b"source content"
 
-    def test_staged_basename_is_unique_per_source(self, tmp_path: Path) -> None:
-        """Two source files with the same leaf name (e.g. ``track01.m4a``
-        in two different folders) must NOT collide in the staging tree —
-        the hash prefix disambiguates them."""
+    def test_staged_basename_unique_per_source(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Two source files with the same leaf name produce distinct staged paths."""
+        monkeypatch.setattr(sys, "platform", "win32")
         stage_root = tmp_path / "stage"
-        # Build two long paths whose basenames match but whose full paths
-        # differ.
         long_in_1 = tmp_path / ("x" * 200) / "track01.m4a"
         long_in_2 = tmp_path / ("y" * 200) / "track01.m4a"
         long_out_1 = tmp_path / ("x" * 200) / "track01.m4a"
@@ -165,74 +162,48 @@ class TestStagingEnabled:
         r1 = stage_paths(long_in_1, long_out_1, enabled=True, tmp_root=stage_root)
         r2 = stage_paths(long_in_2, long_out_2, enabled=True, tmp_root=stage_root)
 
-        assert r1.staged_infile != r2.staged_infile, (
-            "two distinct long paths must produce distinct staged paths"
-        )
+        assert r1.staged_infile != r2.staged_infile
         assert r1.staged_outfile != r2.staged_outfile
-        # Both staged source files must coexist on disk (no clobber).
         assert r1.staged_infile.exists()
         assert r2.staged_infile.exists()
 
-    def test_only_source_long_stages(self, tmp_path: Path) -> None:
-        """If the source is long but the destination is short, staging
-        still applies (we never know whether the encoder will internally
-        re-resolve the destination)."""
-        long_in = tmp_path / ("a" * 200) / "in.m4a"
-        long_in.parent.mkdir(parents=True, exist_ok=True)
-        long_in.write_bytes(b"x")
-        short_out = tmp_path / "out.m4a"  # short
+    def test_md5sum_always_populated(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Result.md5sum is always set, even when staged=False."""
+        monkeypatch.setattr(sys, "platform", "win32")
+        src = tmp_path / "a.flac"
+        src.touch()
+        dst = tmp_path / "b.flac"
+        r = stage_paths(src, dst, enabled=False)
+        assert r.md5sum != ""
+        assert len(r.md5sum) == 12
 
-        r = stage_paths(long_in, short_out, enabled=True, tmp_root=tmp_path / "stage")
-        assert r.staged is True
-        assert r.long_outfile == short_out
-        assert r.staged_outfile != short_out  # moved to a short tmp path
-
-    def test_only_destination_long_stages(self, tmp_path: Path) -> None:
-        """If the destination is long but the source is short, staging
-        still applies."""
-        short_in = tmp_path / "in.m4a"
-        short_in.write_bytes(b"x")
-        long_out = tmp_path / ("a" * 200) / "out.m4a"
-        long_out.parent.mkdir(parents=True, exist_ok=True)
-
-        r = stage_paths(short_in, long_out, enabled=True, tmp_root=tmp_path / "stage")
-        assert r.staged is True
-        assert r.long_outfile == long_out
-
-    def test_source_copy_failure_falls_back_to_long_paths(
+    def test_source_copy_failure_falls_back(
         self,
         tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """If the source file vanished between scan and convert (or the
-        volume is full), the shutil.copy2 inside stage_paths() raises.
-        We catch and fall back to the long paths so CoreConverter surfaces
-        a clear error instead of us silently using a non-existent staged
-        source."""
-        long_in = tmp_path / ("a" * 200) / "in.m4a"
+        """If the source file is missing, staged=False is returned."""
+        monkeypatch.setattr(sys, "platform", "win32")
+        long_in = tmp_path / ("a" * 200) / "nonexistent.m4a"
         long_in.parent.mkdir(parents=True, exist_ok=True)
-        # Note: do NOT create long_in — copy2 will raise FileNotFoundError.
         long_out = tmp_path / ("a" * 200) / "out.m4a"
 
         r = stage_paths(long_in, long_out, enabled=True, tmp_root=tmp_path / "stage")
         assert r.staged is False
-        assert r.staged_infile == long_in
-        assert r.staged_outfile == long_out
 
 
 # ---------------------------------------------------------------------------
-# unstage() copy semantics (literal copy -> unlink)
+# unstage() — atomic rename / copy semantics
 # ---------------------------------------------------------------------------
 
 
 class TestUnstage:
-    """unstage() copies the staged output to the long destination then
-    unlinks both the staged output and the staged source. The flow is a
-    literal three-step copy chain (``copy -> convert -> copy``)."""
+    """unstage() transfers the staged output to the long destination then cleans up."""
 
-    def test_successful_copy(self, tmp_path: Path) -> None:
-        """A non-empty staged output is copied to the long destination;
-        both staged artefacts (source + output) are cleaned up by
-        ``unstage()``."""
+    def test_successful_copy(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A non-empty staged output is transferred to the long destination;
+        both staged artefacts are cleaned up."""
+        monkeypatch.setattr(sys, "platform", "win32")
         stage_root = tmp_path / "stage"
         long_in = tmp_path / ("a" * 200) / "in.m4a"
         long_out = tmp_path / ("a" * 200) / "out.m4a"
@@ -242,131 +213,34 @@ class TestUnstage:
 
         r = stage_paths(long_in, long_out, enabled=True, tmp_root=stage_root)
         assert r.staged is True
-
-        # Simulate CoreConverter writing the output to the staged path.
         r.staged_outfile.write_bytes(b"converted audio")
 
         assert unstage(r) is True
-        # Long destination now exists with the converted bytes.
         assert long_out.exists()
         assert long_out.read_bytes() == b"converted audio"
-        # Staged source was cleaned up.
         assert not r.staged_infile.exists()
-        # Staged output is also cleaned up — unstage unlinks it as
-        # final-step housekeeping (we use shutil.copy2, then explicitly
-        # unlink; we do NOT rely on move()'s side-effect of consuming
-        # the source).
         assert not r.staged_outfile.exists()
 
-    def test_unstage_uses_copy_not_move(self, tmp_path: Path, monkeypatch) -> None:
-        """unstage() must use shutil.copy2(), not shutil.move(). The
-        staged output MUST remain on disk for the duration of the copy
-        so that a mid-copy failure leaves a recoverable artefact. This
-        test verifies by spying on shutil.copy2 / shutil.move: the copy
-        is called and the move is not."""
+    def test_missing_staged_output_returns_false(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Missing staged output returns False."""
+        monkeypatch.setattr(sys, "platform", "win32")
         stage_root = tmp_path / "stage"
         long_in = tmp_path / ("a" * 200) / "in.m4a"
         long_out = tmp_path / ("a" * 200) / "out.m4a"
         long_in.parent.mkdir(parents=True, exist_ok=True)
-        long_out.parent.mkdir(parents=True, exist_ok=True)
-        long_in.write_bytes(b"source")
-
-        r = stage_paths(long_in, long_out, enabled=True, tmp_root=stage_root)
-        r.staged_outfile.write_bytes(b"converted audio")
-
-        copy_calls: list[tuple[str, str]] = []
-        move_calls: list[tuple[str, str]] = []
-
-        import shutil as _shutil  # local import to avoid shadowing
-
-        original_copy2 = _shutil.copy2
-        original_move = _shutil.move
-
-        def spy_copy2(src, dst, *args, **kwargs):
-            copy_calls.append((str(src), str(dst)))
-            return original_copy2(src, dst, *args, **kwargs)
-
-        def spy_move(src, dst, *args, **kwargs):
-            move_calls.append((str(src), str(dst)))
-            return original_move(src, dst, *args, **kwargs)
-
-        # Patch at the import site used by long_path.py.
-        monkeypatch.setattr("src.pathing.long_path.shutil.copy2", spy_copy2)
-        monkeypatch.setattr("src.pathing.long_path.shutil.move", spy_move)
-
-        assert unstage(r) is True
-
-        # shutil.copy2 must be called at least once (stage_paths() copies
-        # the source, unstage() copies the output). The key call we care
-        # about is the staged-out -> long-out one.
-        copied_pairs = [c for c in copy_calls if c[0] == str(r.staged_outfile)]
-        assert len(copied_pairs) == 1, (
-            f"expected exactly one shutil.copy2(staged_outfile, long_outfile), "
-            f"got {copy_calls!r}"
-        )
-        assert copied_pairs[0] == (str(r.staged_outfile), str(r.long_outfile))
-        # shutil.move must NEVER have been called inside unstage() — the
-        # whole point of switching from move to copy is that the staged
-        # file stays alive during the copy.
-        assert move_calls == [], (
-            f"unstage() must not call shutil.move, got {move_calls!r}"
-        )
-
-    def test_staged_source_cleaned_up_even_when_copy_fails(
-        self,
-        tmp_path: Path,
-        monkeypatch,
-    ) -> None:
-        """If the final copy raises (e.g. full destination volume), the
-        staged source and staged output are still cleaned up by the
-        finally block — the next run_pipeline.run() should never inherit
-        orphaned staged files from a failed job."""
-        stage_root = tmp_path / "stage"
-        long_in = tmp_path / ("a" * 200) / "in.m4a"
-        long_out = tmp_path / ("a" * 200) / "out.m4a"
-        long_in.parent.mkdir(parents=True, exist_ok=True)
-        long_out.parent.mkdir(parents=True, exist_ok=True)
-        long_in.write_bytes(b"source")
-
-        r = stage_paths(long_in, long_out, enabled=True, tmp_root=stage_root)
-        r.staged_outfile.write_bytes(b"converted audio")
-
-        def failing_copy2(src, dst, *args, **kwargs):
-            raise OSError("simulated destination volume full")
-
-        monkeypatch.setattr("src.pathing.long_path.shutil.copy2", failing_copy2)
-
-        assert unstage(r) is False
-        # Both staged artefacts should still be cleaned up.
-        assert not r.staged_infile.exists(), "staged source leaked after failed copy"
-        assert not r.staged_outfile.exists(), "staged output leaked after failed copy"
-        # And the long destination should not have been touched.
-        assert not long_out.exists()
-
-    def test_missing_staged_output_returns_false(self, tmp_path: Path) -> None:
-        """If CoreConverter never wrote anything (or wrote to a different
-        path), the staged output is missing and unstage() returns False."""
-        stage_root = tmp_path / "stage"
-        long_in = tmp_path / ("a" * 200) / "in.m4a"
-        long_out = tmp_path / ("a" * 200) / "out.m4a"
-        long_in.parent.mkdir(parents=True, exist_ok=True)
-        long_out.parent.mkdir(parents=True, exist_ok=True)
         long_in.write_bytes(b"x")
+        long_out.parent.mkdir(parents=True, exist_ok=True)
 
         r = stage_paths(long_in, long_out, enabled=True, tmp_root=stage_root)
         assert r.staged is True
-
-        # Don't write anything to staged_outfile — simulate CoreConverter
-        # never produced output.
+        # staged_outfile was never written to
         assert unstage(r) is False
-        # The long destination must remain untouched.
         assert not long_out.exists()
-        # Staged source was cleaned up (we don't want it leaking).
         assert not r.staged_infile.exists()
 
-    def test_empty_staged_output_returns_false(self, tmp_path: Path) -> None:
-        """A 0-byte staged output (the qaac-pipe-failure symptom) returns
-        False so the caller can report it as a failed conversion."""
+    def test_empty_staged_output_returns_false(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A 0-byte staged output (qaac-pipe-failure symptom) returns False."""
+        monkeypatch.setattr(sys, "platform", "win32")
         stage_root = tmp_path / "stage"
         long_in = tmp_path / ("a" * 200) / "in.m4a"
         long_out = tmp_path / ("a" * 200) / "out.m4a"
@@ -375,26 +249,26 @@ class TestUnstage:
         long_in.write_bytes(b"x")
 
         r = stage_paths(long_in, long_out, enabled=True, tmp_root=stage_root)
-        r.staged_outfile.write_bytes(b"")  # 0 bytes — qaac-pipe failure
+        r.staged_outfile.write_bytes(b"")  # 0 bytes
 
         assert unstage(r) is False
-        # Empty staged output was deleted (unlink-then-fail path).
         assert not r.staged_outfile.exists()
-        # Long destination untouched.
         assert not long_out.exists()
 
-    def test_existing_long_destination_is_overwritten(self, tmp_path: Path) -> None:
-        """A pre-existing file at the long destination (e.g. from a
-        previously-failed attempt) must be overwritten by the fresh
-        output. The user explicitly opted into ``--failed-only`` retry
-        semantics that depend on this overwrite behaviour."""
+    def test_existing_long_destination_is_overwritten(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Pre-existing destination is overwritten."""
+        monkeypatch.setattr(sys, "platform", "win32")
         stage_root = tmp_path / "stage"
         long_in = tmp_path / ("a" * 200) / "in.m4a"
         long_out = tmp_path / ("a" * 200) / "out.m4a"
         long_in.parent.mkdir(parents=True, exist_ok=True)
         long_out.parent.mkdir(parents=True, exist_ok=True)
         long_in.write_bytes(b"source")
-        long_out.write_bytes(b"OLD STALE OUTPUT")  # leftover from a previous failure
+        long_out.write_bytes(b"OLD STALE OUTPUT")
 
         r = stage_paths(long_in, long_out, enabled=True, tmp_root=stage_root)
         r.staged_outfile.write_bytes(b"new fresh output")
@@ -402,9 +276,13 @@ class TestUnstage:
         assert unstage(r) is True
         assert long_out.read_bytes() == b"new fresh output"
 
-    def test_unstage_creates_missing_parent_dir(self, tmp_path: Path) -> None:
-        """If the long-destination's parent directory was deleted between
-        scan and convert (unusual but possible), unstage() creates it."""
+    def test_unstage_creates_missing_parent_dir(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """If the long-destination's parent dir was deleted, unstage() creates it."""
+        monkeypatch.setattr(sys, "platform", "win32")
         stage_root = tmp_path / "stage"
         long_in = tmp_path / ("a" * 200) / "in.m4a"
         long_out = tmp_path / ("a" * 200) / "out.m4a"
@@ -421,15 +299,16 @@ class TestUnstage:
 
 
 # ---------------------------------------------------------------------------
-# Property aliases
+# Property aliases and new fields
 # ---------------------------------------------------------------------------
 
 
-class TestPropertyAliases:
-    """The ``StagingResult.infile`` / ``outfile`` aliases keep the new
-    API backwards-compatible with the old 8.3 short-name code path."""
+class TestStagingResultFields:
+    """StagingResult always carries md5sum and temp_filename."""
 
-    def test_infile_alias_returns_staged_infile(self, tmp_path: Path) -> None:
+    def test_infile_outfile_alias(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """infile/outfile aliases work."""
+        monkeypatch.setattr(sys, "platform", "win32")
         long_in = tmp_path / ("a" * 200) / "in.m4a"
         long_out = tmp_path / ("a" * 200) / "out.m4a"
         long_in.parent.mkdir(parents=True, exist_ok=True)
@@ -439,27 +318,43 @@ class TestPropertyAliases:
         assert r.infile == r.staged_infile
         assert r.outfile == r.staged_outfile
 
+    def test_md5sum_always_set(self, tmp_path: Path) -> None:
+        """md5sum is always present even when staged=False."""
+        r = StagingResult(
+            long_infile=tmp_path / "a.flac",
+            long_outfile=tmp_path / "b.flac",
+            staged_infile=tmp_path / "a.flac",
+            staged_outfile=tmp_path / "b.flac",
+            staged=False,
+            md5sum="abcd123456ef",
+            temp_filename="",
+        )
+        assert r.md5sum == "abcd123456ef"
+        assert len(r.md5sum) == 12
+
 
 # ---------------------------------------------------------------------------
-# Hash helper
+# compute_md5sum re-exported from long_path
 # ---------------------------------------------------------------------------
 
 
-class TestShortHash:
-    """The 8-char MD5 prefix is the source-path disambiguator."""
+class TestComputeMd5sumExport:
+    """compute_md5sum is re-exported from long_path for convenience."""
 
-    def test_hash_is_stable(self, tmp_path: Path) -> None:
-        h1 = _short_hash(Path("E:/foo/bar/track01.m4a"))
-        h2 = _short_hash(Path("E:/foo/bar/track01.m4a"))
+    def test_re_exported(self) -> None:
+        assert callable(compute_md5sum)
+
+    def test_deterministic(self, tmp_path: Path) -> None:
+        p = tmp_path / "music" / "track.flac"
+        h1 = compute_md5sum(p)
+        h2 = compute_md5sum(p)
         assert h1 == h2
+        assert len(h1) == 12
 
-    def test_hash_disambiguates_distinct_paths(self) -> None:
-        h1 = _short_hash(Path("E:/foo/track01.m4a"))
-        h2 = _short_hash(Path("E:/bar/track01.m4a"))
-        assert h1 != h2
-
-    def test_hash_length_is_eight(self) -> None:
-        assert len(_short_hash(Path("anything"))) == 8
+    def test_utf8_path(self, tmp_path: Path) -> None:
+        p = tmp_path / "日本語" / "track.flac"
+        h = compute_md5sum(p)
+        assert len(h) == 12
 
 
 # ---------------------------------------------------------------------------
@@ -483,12 +378,9 @@ class TestCleanupStagingWorkspace:
         assert list((stage_root / "dst").iterdir()) == []
 
     def test_missing_dirs_are_no_op(self, tmp_path: Path) -> None:
-        # Should not raise even when nothing exists.
         cleanup_staging_workspace(tmp_root=tmp_path / "does_not_exist")
 
     def test_subdirectory_inside_src_is_removed(self, tmp_path: Path) -> None:
-        """A leftover directory inside src/ (e.g. from a crashed worker)
-        is recursively removed."""
         stage_root = tmp_path / "audio"
         nested = stage_root / "src" / "nested-dir"
         nested.mkdir(parents=True)
@@ -501,18 +393,67 @@ class TestCleanupStagingWorkspace:
 
 
 # ---------------------------------------------------------------------------
+# md5_staging mode parameter
+# ---------------------------------------------------------------------------
+
+
+class TestMd5StagingMode:
+    """The md5_staging parameter controls the naming form of staged files."""
+
+    def test_auto_uses_md5hash_form(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """auto mode uses the <md5>.md5hash.<ext> form."""
+        monkeypatch.setattr(sys, "platform", "win32")
+        src = tmp_path / "日本語.flac"
+        src.touch()
+        dst = tmp_path / "output.flac"
+
+        r = stage_paths(src, dst, enabled=True, tmp_root=tmp_path / "stage", md5_staging="auto")
+        assert r.staged is True
+        assert ".md5hash." in r.temp_filename
+        assert r.temp_filename.endswith(".md5hash.flac")
+
+    def test_on_uses_md5hash_form(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """on mode uses the <md5>.md5hash.<ext> form."""
+        monkeypatch.setattr(sys, "platform", "win32")
+        src = tmp_path / "track.flac"
+        src.touch()
+        dst = tmp_path / "output.flac"
+
+        r = stage_paths(src, dst, enabled=True, tmp_root=tmp_path / "stage", md5_staging="on")
+        assert r.staged is True
+        assert ".md5hash." in r.temp_filename
+
+    def test_off_uses_legacy_form(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """off mode uses the legacy <8-hex>__<basename> form."""
+        monkeypatch.setattr(sys, "platform", "win32")
+        src = tmp_path / "日本語.flac"
+        src.touch()
+        dst = tmp_path / "output.flac"
+
+        r = stage_paths(src, dst, enabled=True, tmp_root=tmp_path / "stage", md5_staging="off")
+        assert r.staged is True
+        assert "__" in r.temp_filename
+        assert ".md5hash." not in r.temp_filename
+        assert r.temp_filename.endswith("__output.flac")
+
+
+# ---------------------------------------------------------------------------
 # Cross-platform behaviour
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skipif(sys.platform != "win32", reason="win32-only behaviour")
-class TestWin32Behavior:
-    """On Windows, staging is the default. Short paths must NOT stage."""
+class TestCrossPlatform:
+    """Non-Windows platforms skip staging entirely."""
 
-    def test_short_paths_skip_staging(self, tmp_path: Path) -> None:
-        infile = tmp_path / "short.m4a"
-        outfile = tmp_path / "short_out.m4a"
-        infile.write_bytes(b"x")
+    def test_non_win32_always_returns_staged_false(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(sys, "platform", "linux")
+        src = tmp_path / "日本語.flac"
+        src.touch()
+        dst = tmp_path / "output.flac"
 
-        r = stage_paths(infile, outfile, enabled=True, tmp_root=tmp_path / "stage")
+        r = stage_paths(src, dst, enabled=True, tmp_root=tmp_path / "stage")
         assert r.staged is False

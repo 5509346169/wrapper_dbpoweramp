@@ -40,6 +40,11 @@ class NativeDbpowerampConfig:
     # ~240 chars; short paths pay no I/O cost. Override at runtime with
     # --tmp-staging / --no-tmp-staging.
     tmp_staging: bool = True
+    # md5sum-named staging mode: 'auto' (default), 'on', or 'off'.
+    # 'auto': stage when source/dest has non-ASCII name OR path > 240 chars.
+    # 'on': always stage with md5sum name.
+    # 'off': disable md5sum naming (paths still stage for MAX_PATH if tmp_staging is on).
+    md5_staging: str = "auto"
 
 
 @dataclass

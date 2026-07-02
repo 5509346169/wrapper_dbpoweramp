@@ -2,14 +2,14 @@
 // keyboard-navigates the result list. Tiny built-in scorer (no Fuse.js dep
 // so the bundle stays under a few KB).
 
-const INDEX_URL = "/wrapper_dbpoweramp/search.json";
+const INDEX_URL = "/wrapper_dbpoweramp/index.json";
 let CACHE = null;
 
 async function loadIndex() {
   if (CACHE) return CACHE;
   try {
     const res = await fetch(INDEX_URL, { credentials: "omit" });
-    if (!res.ok) throw new Error(`search.json HTTP ${res.status}`);
+    if (!res.ok) throw new Error(`index.json HTTP ${res.status}`);
     CACHE = await res.json();
   } catch (_) {
     CACHE = [];

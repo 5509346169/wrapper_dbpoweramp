@@ -22,6 +22,7 @@ from src.ui.progress_view import RichProgressSink, VerboseProgressSink
 if TYPE_CHECKING:
     from src.app.context import AppContext
     from src.index.scan_cache import ScanCache
+    from src.index.staging_cache import StagingCache
     from src.ui.progress_view import ProgressSink
 
 
@@ -32,6 +33,7 @@ class ScanResult:
     rows: list[IndexRow]
     sidecar_map: dict[Path, str]
     scan_cache: "ScanCache | None"
+    staging_cache: "StagingCache | None"
     total_files: int
     cache_hit: bool
 
@@ -56,6 +58,7 @@ def scan(
         A ``ScanResult`` with rows, sidecar_map, scan_cache, and metadata.
     """
     from src.app.lifecycle.scan_cache import close_scan_cache, create_scan_cache, open_scan_cache
+    from src.app.lifecycle.staging_cache import close_staging_cache, create_staging_cache, open_staging_cache
 
     cache_enabled = (
         not getattr(ctx.args, "no_scan_cache", False)
@@ -74,6 +77,7 @@ def scan(
     tmp_dir.mkdir(exist_ok=True)
 
     scan_cache: "ScanCache | None" = None
+    staging_cache: "StagingCache | None" = None
     cache_hit = False
     sink: "ProgressSink | None" = None
 
@@ -130,6 +134,7 @@ def scan(
 
         if cache_enabled:
             scan_cache = create_scan_cache(tmp_dir, ctx.args.input, ctx.args.exclude)
+            staging_cache = create_staging_cache(tmp_dir, ctx.args.input, ctx.args.exclude)
 
         if ctx.verbose:
             sink = VerboseProgressSink()
@@ -161,6 +166,7 @@ def scan(
         rows=rows,
         sidecar_map=sidecar_map,
         scan_cache=scan_cache,
+        staging_cache=staging_cache,
         total_files=total_files,
         cache_hit=cache_hit,
     )

@@ -77,6 +77,8 @@ def _backend_cfg(
         ),
         native_dbpoweramp=NativeDbpowerampConfig(
             coreconverter_path=Path(coreconverter or "C:/Program Files/dBpoweramp/CoreConverter.exe"),
+            tmp_staging=True,
+            md5_staging="auto",
         ),
         native_ffmpeg=NativeBackendConfig(
             ffmpeg_binary="ffmpeg",
@@ -289,6 +291,7 @@ class TestNativeBackendTmpStaging:
                 native_dbpoweramp=NativeDbpowerampConfig(
                     coreconverter_path=base.backend.native_dbpoweramp.coreconverter_path,
                     tmp_staging=False,
+                    md5_staging="auto",
                 ),
                 native_ffmpeg=base.backend.native_ffmpeg,
             ),
@@ -337,6 +340,7 @@ class TestNativeBackendTmpStaging:
                 native_dbpoweramp=NativeDbpowerampConfig(
                     coreconverter_path=base.backend.native_dbpoweramp.coreconverter_path,
                     tmp_staging=True,
+                    md5_staging="auto",
                 ),
                 native_ffmpeg=base.backend.native_ffmpeg,
             ),
@@ -401,13 +405,14 @@ class TestNativeBackendTmpStaging:
             assert str(long_outfile) not in cmd, (
                 f"long outfile leaked into cmd: {cmd!r}"
             )
-            # The cmd's -outfile points at a short path under tmp/audio/dst.
+            # The cmd's -outfile points at a short path under tmp/audio/dst
+            # using the <md5>.md5hash.<ext> naming form.
             short_out = captured["short_outfile"]
             assert "audio" in short_out and "dst" in short_out, (
                 f"expected staged output under tmp/audio/dst, got {short_out!r}"
             )
-            assert "out.m4a" in short_out, (
-                f"staged basename should preserve original outfile name, got {short_out!r}"
+            assert ".md5hash." in short_out, (
+                f"staged filename should use .md5hash. naming form, got {short_out!r}"
             )
             # The unstage() step moved the short staged output to the long
             # destination.

@@ -41,6 +41,7 @@ def run_all(
     progress: ProgressSink,
     print_to_terminal: bool = False,
     retry_failed: bool = False,
+    md5_staging: str = "auto",
 ) -> tuple[dict[str, int], list[Future], Queue, DBWriteQueue]:
     """
     Execute a list of ConversionJobs using a thread or process pool.
@@ -114,6 +115,7 @@ def run_all(
                     stream_cb,
                     events,
                     retry_failed,
+                    md5_staging,
                 )
                 for job in jobs
             ]

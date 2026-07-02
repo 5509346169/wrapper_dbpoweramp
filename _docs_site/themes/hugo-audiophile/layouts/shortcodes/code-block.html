@@ -1,0 +1,15 @@
+{{- $lang := .Get "lang" | default "sh" -}}
+{{- $title := .Get "title" -}}
+<figure class="code-block{{ with .Get "class" }} {{ . }}{{ end }}"
+        data-code-block
+        data-lang="{{ $lang }}">
+  {{- with $title -}}
+  <figcaption class="code-block__title">{{ . }}</figcaption>
+  {{- end -}}
+  <div class="code-block__body">
+    <button type="button" class="code-block__copy" data-code-copy aria-label="Copy code">
+      <span data-code-copy-label>Copy</span>
+    </button>
+    <pre class="code-block__pre"><code class="language-{{ $lang }}">{{ .Inner | htmlEscape }}</code></pre>
+  </div>
+</figure>

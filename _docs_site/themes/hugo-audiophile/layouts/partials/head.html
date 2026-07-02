@@ -1,0 +1,24 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f6f4ee" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f1216" media="(prefers-color-scheme: dark)">
+
+<title>{{ with .Title }}{{ . }} — {{ end }}{{ .Site.Title }}</title>
+<meta name="description" content="{{ with .Description }}{{ . }}{{ else }}{{ .Summary | default "" | truncate 160 }}{{ end }}">
+
+<link rel="canonical" href="{{ .Permalink }}">
+{{ with .OutputFormats.Get "RSS" -}}
+<link rel="alternate" type="application/rss+xml" title="{{ $.Site.Title }}" href="{{ .RelPermalink }}">
+{{- end }}
+
+<link rel="preload" as="font" type="font/woff2" href="/assets/fonts/bodoni-moda-var.woff2" crossorigin>
+<link rel="preload" as="font" type="font/woff2" href="/assets/fonts/geist-var.woff2" crossorigin>
+<link rel="preload" as="font" type="font/woff2" href="/assets/fonts/jetbrains-mono-var.woff2" crossorigin>
+
+<link rel="stylesheet" href="/css/main.css">
+
+<script type="module" src="/assets/vendor/theme.js" defer></script>
+<script type="module" src="/assets/vendor/waveform.js" defer></script>
+<script type="module" src="/assets/vendor/search-palette.js" defer></script>
+<script type="module" src="/assets/vendor/diagrams.js" defer></script>

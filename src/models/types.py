@@ -94,3 +94,5 @@ class JobResult:
     status: JobStatus
     error_msg: Optional[str] = None
     stdout: Optional[str] = None
+    temp_filename: Optional[str] = None
+    md5sum: Optional[str] = None

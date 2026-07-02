@@ -1,0 +1,48 @@
+// Color tokens — cool monochrome with cyan as the only chromatic accent.
+// All values are CSS custom properties so JS can rewrite them for dark mode.
+//
+// Palette story:
+//   - paper / ink / ink-soft / rule -> the monochrome canvas
+//   - accent (cyan)                 -> the only chromatic signal; used sparingly
+//   - accent-warm (amber)           -> reserved for QAAC + audiophile callouts
+//   - status                        -> success/warn/danger for error-handling page
+
+:root,
+:root[data-theme="light"] {
+  --paper:        #f6f4ee;   // ivory, slightly warm
+  --paper-deep:   #ece8de;
+  --ink:          #1a1d21;   // graphite, not pure black
+  --ink-soft:     #4a4f55;
+  --ink-mute:     #7a7f86;
+  --rule:         #d9d4c6;
+  --rule-soft:    #e6e2d6;
+  --accent:       #2a7ea4;   // cyan
+  --accent-soft:  #cde5ee;
+  --accent-warm:  #c08a3e;   // amber, used only for QAAC + audiophile
+  --accent-warm-soft: #f0e1c5;
+  --status-ok:    #2f7d56;
+  --status-warn:  #b07a1d;
+  --status-bad:   #a13a3a;
+
+  // Accent bar — 2px left border used on cards, code blocks, active nav
+  --accent-bar:   #2a7ea4;
+}
+
+:root[data-theme="dark"] {
+  --paper:        #0f1216;
+  --paper-deep:   #16191e;
+  --ink:          #ece8df;
+  --ink-soft:     #a8a59b;
+  --ink-mute:     #6b6f76;
+  --rule:         #2a2e34;
+  --rule-soft:    #1d2126;
+  --accent:       #6fc1d4;
+  --accent-soft:  #1d3a44;
+  --accent-warm:  #d8a85c;
+  --accent-warm-soft: #3a2f1d;
+  --status-ok:    #5cb487;
+  --status-warn:  #d8a85c;
+  --status-bad:   #d97373;
+
+  --accent-bar:   #6fc1d4;
+}

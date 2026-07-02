@@ -1,0 +1,22 @@
+// Hugo audiophile theme — main entry point
+// Compiled by build-css.mjs (Dart Sass JS API).
+
+@use "01-tokens/color";
+@use "01-tokens/space";
+@use "01-tokens/type";
+@use "01-tokens/motion";
+
+@use "02-base/reset";
+@use "02-base/prose";
+
+@use "03-layout/shell";
+@use "03-layout/header";
+@use "03-layout/landing";
+@use "03-layout/reference";
+
+@use "04-components/callout";
+@use "04-components/code-block";
+@use "04-components/codec-chip";
+@use "04-components/command-palette";
+@use "04-components/version-selector";
+@use "04-components/waveform";

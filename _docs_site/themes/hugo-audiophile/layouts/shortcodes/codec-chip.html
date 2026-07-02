@@ -1,0 +1,20 @@
+{{- $slug := .Get "slug" | default "" -}}
+{{- $preset := "" -}}
+{{- range hugo.Data.presets -}}
+  {{- if eq .slug $slug -}}
+    {{- $preset = . -}}
+  {{- end -}}
+{{- end -}}
+{{- if $preset -}}
+<span class="codec-chip codec-chip--{{ $preset.color | default "cyan" }} codec-chip--{{ $preset.type }}"
+      data-codec="{{ $preset.codec }}"
+      title="{{ $preset.summary }}">
+  <span class="codec-chip__icon" data-icon="{{ $preset.icon }}" aria-hidden="true"></span>
+  <span class="codec-chip__name">{{ $preset.name }}</span>
+  <span class="codec-chip__meta">{{ $preset.bitrate }}</span>
+</span>
+{{- else -}}
+<span class="codec-chip codec-chip--unknown" title="Unknown preset: {{ $slug }}">
+  {{ $slug }}
+</span>
+{{- end -}}

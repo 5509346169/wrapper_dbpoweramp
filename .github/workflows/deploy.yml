@@ -20,16 +20,14 @@ concurrency:
 
 jobs:
   build:
-    name: Build Jekyll site
+    name: Build Hugo site
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - uses: ruby/setup-ruby@v1
+      - uses: peaceiris/actions-hugo@v3
         with:
-          ruby-version: "3.2"
-          working-directory: _docs_site
-          bundler-cache: true
+          hugo-version: "0.139"
 
       - uses: actions/setup-node@v4
         with:
@@ -41,25 +39,21 @@ jobs:
         working-directory: _docs_site
         run: npm ci
 
-      - name: Bundle vendor JS (no CDN)
+      - name: CSS + JS bundle
         working-directory: _docs_site
-        run: npm run vendor
+        run: npm run css && npm run vendor
 
-      - name: Jekyll build (strict front-matter)
+      - name: Hugo build
         working-directory: _docs_site
-        run: bundle exec jekyll build --destination _site --trace --strict_front_matter
-
-      - name: Copy _site/ to site/ for Pages artifact
-        working-directory: _docs_site
-        run: node scripts/copy-site.mjs
+        run: hugo --gc --minify --environment production
 
       - name: CDN guard — fail if any https:// survives
         working-directory: _docs_site
-        run: node scripts/check-no-cdn.mjs site
+        run: node scripts/check-no-cdn.mjs public
 
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: _docs_site/site
+          path: _docs_site/public
 
   deploy:
     name: Deploy to GitHub Pages

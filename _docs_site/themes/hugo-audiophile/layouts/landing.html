@@ -1,0 +1,29 @@
+{{- define "main" -}}
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+{{- partial "head.html" . -}}
+<body class="theme-landing">
+  <a class="skip-link" href="#main">Skip to content</a>
+  {{- partial "header.html" . -}}
+  <main id="main">
+    {{- block "content" . }}{{- end -}}
+  </main>
+  {{- partial "footer.html" . -}}
+  {{- partial "command-palette.html" . -}}
+  <script>
+    (function () {
+      try {
+        var stored = localStorage.getItem("theme");
+        var prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+        var theme = stored || (prefersDark ? "dark" : "light");
+        document.documentElement.setAttribute("data-theme", theme);
+      } catch (_) { /* localStorage may be unavailable in private mode */ }
+    })();
+  </script>
+</body>
+</html>
+{{- end -}}
+{{- define "content" -}}
+{{ .Content }}
+{{- end -}}
+{{- template "main" . -}}

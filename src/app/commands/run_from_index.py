@@ -22,6 +22,7 @@ def run(ctx: "AppContext") -> int:
     """Run conversions using a pre-built index database, skipping scan/probe phases."""
     from src.app.context import MutablePhaseState
     from src.app.lifecycle.signals import install_signal_guard
+    from src.app.lifecycle.staging_cache import close_staging_cache, create_staging_cache
     from src.app.pipeline.execute import execute_phases
     from src.app.pipeline.jobs import build_jobs, check_lossy_gate
     from src.app.pipeline.phases import run_jobs_by_phase
@@ -48,7 +49,19 @@ def run(ctx: "AppContext") -> int:
     print(f"  Total size: {format_bytes(summary_info['total_bytes'])}")
     print(f"  Lossy files: {summary_info['lossy']}")
 
-    jobs = build_jobs(source_rows, ctx)
+    # Create a staging cache for this run (keyed by index path + excludes).
+    # This is needed for md5sum → temp_path → dest_path persistence even
+    # when using --index (no scan phase).
+    staging_cache = create_staging_cache(
+        tmp_dir=Path("tmp"),
+        input_path=ctx.args.index,
+        exclude=getattr(ctx.args, "exclude", []),
+    )
+
+    try:
+        jobs = build_jobs(source_rows, ctx, staging_cache=staging_cache)
+    finally:
+        close_staging_cache(staging_cache)
 
     # Lossy gate
     if summary_info["lossy"] > 0:

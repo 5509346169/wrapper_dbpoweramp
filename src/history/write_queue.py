@@ -16,6 +16,7 @@ from typing import Optional
 
 from src.history.schema import (
     ADD_FILE_SIZE_COLUMN_SQL,
+    ADD_TEMP_FILENAME_COLUMN_SQL,
     CREATE_HISTORY_TABLE_SQL,
     INSERT_OR_REPLACE_HISTORY_SQL,
     apply_history_pragmas,
@@ -64,6 +65,7 @@ class _ConversionLogEntry:
     error_msg: Optional[str]
     stdout: Optional[str]
     file_size: Optional[int] = None
+    temp_filename: Optional[str] = None
 
 
 class DBWriteQueue:
@@ -100,6 +102,7 @@ class DBWriteQueue:
         error_msg: Optional[str] = None,
         stdout: Optional[str] = None,
         file_size: Optional[int] = None,
+        temp_filename: Optional[str] = None,
     ) -> None:
         """Queue a conversion log entry for async writing.
 
@@ -115,6 +118,7 @@ class DBWriteQueue:
             error_msg: Optional error message for failed jobs.
             stdout: Optional captured stdout for the job.
             file_size: Optional file size in bytes of the output file.
+            temp_filename: Optional temp staging filename for failed jobs.
         """
         entry = _ConversionLogEntry(
             source=source,
@@ -125,6 +129,7 @@ class DBWriteQueue:
             error_msg=error_msg,
             stdout=stdout,
             file_size=file_size,
+            temp_filename=temp_filename,
         )
         self._queue.put((_LogEntryKind.CONVERSION, entry))
 
@@ -136,6 +141,11 @@ class DBWriteQueue:
         conn.commit()
         try:
             conn.execute(ADD_FILE_SIZE_COLUMN_SQL)
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass  # column already exists
+        try:
+            conn.execute(ADD_TEMP_FILENAME_COLUMN_SQL)
             conn.commit()
         except sqlite3.OperationalError:
             pass  # column already exists
@@ -163,6 +173,11 @@ class DBWriteQueue:
                         entry.stdout,
                         timestamp,
                         entry.file_size,
+                        None,  # verify_status
+                        None,  # verify_reason
+                        None,  # verify_format
+                        None,  # verify_duration_s
+                        entry.temp_filename,
                     ),
                 )
                 conn.commit()

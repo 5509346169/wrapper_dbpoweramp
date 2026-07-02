@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from argparse import Namespace
@@ -29,9 +29,7 @@ class AppContext:
     execution_mode: "ExecutionMode"
     verbose: bool
     tmp_staging: bool = True
-    # When True, the prefilter restricts pending jobs to those whose latest
-    # history row is FAILED, and ``run_job`` re-encodes them instead of
-    # short-circuiting via ``last_failure()``. Default False.
+    md5_staging: Literal["auto", "on", "off"] = "auto"
     failed_only: bool = False
 
 
@@ -116,6 +114,14 @@ def build_context(args: "Namespace") -> AppContext:
         else settings.backend.native_dbpoweramp.tmp_staging
     )
 
+    # md5sum-named staging mode: CLI arg overrides settings.yaml.
+    cli_md5_staging: str = getattr(args, "md5_staging", "auto")
+    md5_staging: str = (
+        cli_md5_staging
+        if cli_md5_staging != "auto"
+        else settings.backend.native_dbpoweramp.md5_staging
+    )
+
     # --failed-only is a CLI-only flag (no settings.yaml default — it is a
     # per-run retry instruction, not a behavioural preference). argparse
     # leaves ``failed_only`` as ``None`` when the user passed neither flag,
@@ -134,5 +140,6 @@ def build_context(args: "Namespace") -> AppContext:
         execution_mode=execution_mode,
         verbose=verbose,
         tmp_staging=tmp_staging,
+        md5_staging=md5_staging,
         failed_only=failed_only,
     )

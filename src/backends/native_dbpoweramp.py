@@ -72,22 +72,22 @@ class NativeDbpowerampBackend(ConversionBackend):
         encoder = backend_args.encoder or ""
         extra_args = list(backend_args.args)
 
-        # Long-path workaround: on Windows, CoreConverter and its child
-        # encoders (qaac.exe, lame.exe, etc.) call CreateFileW without the
-        # ``\\?\`` prefix, so they fail to open any source/destination path
-        # whose absolute form exceeds MAX_PATH (260 chars). When the user
-        # opts in via ``tmp_staging: true`` (settings.yaml) or
-        # ``--tmp-staging`` (CLI), we copy the source to a short path under
-        # ``tmp/audio/src/<hash>__<basename>``, point CoreConverter at
-        # ``tmp/audio/dst/<hash>__<basename>`` for the output, then move the
-        # converted file to the original long destination on success. This
-        # avoids every MAX_PATH-sensitive Win32 call in the encode pipeline
-        # regardless of whether 8.3 name generation is enabled on the
-        # volume. See ``src.pathing.long_path`` for details.
+        # Long-path workaround via md5sum staging: on Windows, CoreConverter
+        # and its child encoders (qaac.exe, lame.exe, etc.) call
+        # CreateFileW without the ``\\?\`` prefix, so they fail on
+        # UTF-8 filenames (non-ASCII chars trigger ANSI-codepage path
+        # handling that produces 0-byte output) and on paths exceeding
+        # MAX_PATH (260 chars).  When the user opts in via
+        # ``tmp_staging: true`` (settings.yaml) or ``--tmp-staging`` (CLI),
+        # ``stage_paths()`` copies the source to a short path under
+        # ``tmp/audio/src/<md5>.md5hash.<ext>``, points CoreConverter at
+        # ``tmp/audio/dst/<md5>.md5hash.<ext>``, and ``unstage()`` moves
+        # the converted file to the original long destination on success.
         staged = stage_paths(
             infile=job.infile,
             outfile=job.outfile,
             enabled=self._cfg.tmp_staging,
+            md5_staging=self._cfg.md5_staging,
         )
         infile_for_cmd = staged.staged_infile
         outfile_for_cmd = staged.staged_outfile
@@ -158,14 +158,9 @@ class NativeDbpowerampBackend(ConversionBackend):
 
         if exit_code == 0 and staged.staged:
             # Tmp-staging mode: CoreConverter wrote its output to the short
-            # ``tmp/audio/dst/<hash>__<basename>`` path. ``unstage()`` performs
-            # a literal ``shutil.copy2()`` of that file to the original long
-            # destination and then unlinks both the staged output and the
-            # staged source. If unstage returns False the conversion
-            # succeeded but the copy failed (extremely rare; usually a
-            # permissions issue, a read-only destination volume, or the
-            # destination's parent directory was deleted between scan and
-            # convert).
+            # ``tmp/audio/dst/<md5>.md5hash.<ext>`` path. ``unstage()``
+            # transfers that file to the original long destination.  If unstage
+            # returns False the conversion succeeded but the transfer failed.
             if not unstage(staged):
                 return JobResult(
                     job=job,
@@ -173,11 +168,13 @@ class NativeDbpowerampBackend(ConversionBackend):
                     error_msg=(
                         f"CoreConverter exited 0 but the expected output at "
                         f"{staged.long_outfile} is missing or empty after the "
-                        "tmp-stage move. Check that the destination's parent "
+                        "tmp-stage transfer. Check that the destination's parent "
                         "directory is writable and not full, and that "
                         "tmp/audio/ has enough free space."
                     ),
                     stdout=stdout_text,
+                    temp_filename=staged.temp_filename,
+                    md5sum=staged.md5sum,
                 )
             # The on-disk file is now at job.outfile (the long path), which
             # is where the runner's post-write verifier expects it.
@@ -190,4 +187,6 @@ class NativeDbpowerampBackend(ConversionBackend):
                 status="FAILED",
                 error_msg=f"CoreConverter exited with code {exit_code}",
                 stdout=stdout_text,
+                temp_filename=staged.temp_filename,
+                md5sum=staged.md5sum,
             )

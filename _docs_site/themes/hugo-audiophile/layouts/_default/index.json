@@ -1,0 +1,11 @@
+{{- /* Hugo JSON index for search palette */ -}}
+{{- $.Scratch.Set "index" slice -}}
+{{- range where .Site.RegularPages "Section" "!=" "" -}}
+  {{- $.Scratch.Add "index" (slice (dict
+    "title" .Title
+    "href" .RelPermalink
+    "section" .Section
+    "summary" .Summary
+  )) -}}
+{{- end -}}
+{{- $.Scratch.Get "index" | jsonify -}}
