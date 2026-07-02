@@ -1,9 +1,21 @@
+// Code block — full-width bleed with left accent bar. No border, no border-radius.
+
 .code-block {
-  margin: var(--s-5) 0;
-  border: 1px solid var(--rule);
-  border-radius: var(--radius-md);
-  overflow: hidden;
+  margin: var(--s-6) 0;
   background: var(--paper-deep);
+  position: relative;
+
+  // Left accent bar — the differentiation anchor
+  &::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--accent-bar);
+    border-radius: 1px;
+  }
 }
 .code-block__title {
   margin: 0;
@@ -12,18 +24,21 @@
   font-size: var(--step--1);
   text-transform: uppercase;
   letter-spacing: var(--tracking-caps);
-  color: var(--ink-soft);
-  background: var(--rule-soft);
+  color: var(--ink-mute);
+  background: color-mix(in oklab, var(--paper-deep) 80%, var(--rule));
   border-bottom: 1px solid var(--rule);
+  font-weight: 500;
 }
 .code-block__body {
   position: relative;
+  overflow-x: auto;
 }
 .code-block__pre {
   margin: 0;
   border: 0;
   border-radius: 0;
   background: transparent;
+  padding: var(--s-4) var(--s-4) var(--s-4) calc(var(--s-4) + 2px); // compensate for accent bar
 }
 .code-block__copy {
   position: absolute;
@@ -42,7 +57,10 @@
   transition: color var(--dur-1) var(--ease-out-soft),
               border-color var(--dur-1) var(--ease-out-soft);
 }
-.code-block__copy:hover { color: var(--accent); border-color: var(--accent); }
+.code-block__copy:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
 .code-block__copy[data-copied="true"] {
   color: var(--status-ok);
   border-color: var(--status-ok);

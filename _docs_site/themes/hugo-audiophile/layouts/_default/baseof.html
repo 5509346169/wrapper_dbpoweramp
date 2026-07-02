@@ -1,19 +1,10 @@
-{{- define "main" -}}
+{{ define "base" }}
 <!DOCTYPE html>
 <html lang="en" data-theme="light">
-{{- partial "head.html" . -}}
-<body class="theme-shell">
+{{ partial "head.html" . }}
+<body class="{{ .Params.bodyClass | default "theme-shell" }}">
   <a class="skip-link" href="#main">Skip to content</a>
-  <div class="shell">
-    {{- partial "header.html" . -}}
-    {{- partial "sidebar.html" . -}}
-    <main id="main" class="shell__main">
-      {{- block "content" . }}{{- end -}}
-    </main>
-    {{- partial "right-rail.html" . -}}
-  </div>
-  {{- partial "footer.html" . -}}
-  {{- partial "command-palette.html" . -}}
+  {{ block "body" . }}{{ end }}
   <script>
     (function () {
       try {
@@ -26,4 +17,4 @@
   </script>
 </body>
 </html>
-{{- end -}}
+{{ end }}

@@ -1,15 +1,18 @@
-{{- define "main" -}}
 <!DOCTYPE html>
 <html lang="en" data-theme="light">
-{{- partial "head.html" . -}}
-<body class="theme-reference">
+{{ partial "head.html" . }}
+<body class="{{ .Params.bodyClass | default "theme-reference" }}">
   <a class="skip-link" href="#main">Skip to content</a>
-  {{- partial "header.html" . -}}
+  {{ partial "header.html" . }}
   <main id="main" class="reference">
-    {{- block "content" . }}{{- end -}}
+    <div class="reference__content">
+      <div class="prose">
+        {{ .Content }}
+      </div>
+    </div>
   </main>
-  {{- partial "footer.html" . -}}
-  {{- partial "command-palette.html" . -}}
+  {{ partial "footer.html" . }}
+  {{ partial "command-palette.html" . }}
   <script>
     (function () {
       try {
@@ -22,12 +25,3 @@
   </script>
 </body>
 </html>
-{{- end -}}
-{{- define "content" -}}
-<div class="reference__content">
-  <div class="prose">
-    {{ .Content }}
-  </div>
-</div>
-{{- end -}}
-{{- template "main" . -}}

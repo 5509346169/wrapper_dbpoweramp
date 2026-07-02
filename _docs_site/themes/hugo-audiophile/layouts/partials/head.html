@@ -16,9 +16,9 @@
 <link rel="preload" as="font" type="font/woff2" href="/assets/fonts/geist-var.woff2" crossorigin>
 <link rel="preload" as="font" type="font/woff2" href="/assets/fonts/jetbrains-mono-var.woff2" crossorigin>
 
-<link rel="stylesheet" href="/css/main.css">
+<link rel="stylesheet" href="{{ (resources.Get "css/main.css" | toCSS "main.css" | minify).RelPermalink }}">
 
 <script type="module" src="/assets/vendor/theme.js" defer></script>
 <script type="module" src="/assets/vendor/waveform.js" defer></script>
-<script type="module" src="/assets/vendor/search-palette.js" defer></script>
-<script type="module" src="/assets/vendor/diagrams.js" defer></script>
+{{ partial "mermaid/assets/js" . }}
+{{ partial "search/assets/js" . }}

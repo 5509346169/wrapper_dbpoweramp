@@ -9,8 +9,28 @@
   color: var(--ink);
 }
 .prose > * + * { margin-top: var(--s-4); }
-.prose > h2 { margin-top: var(--s-7); }
-.prose > h3 { margin-top: var(--s-5); }
+.prose > h2 {
+  margin-top: var(--s-7);
+  padding-top: var(--s-6);
+  border-top: 1px solid var(--rule-soft);
+  font-size: var(--step-4);
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+.prose > h3 {
+  margin-top: var(--s-5);
+  font-size: var(--step-2);
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+}
+.prose > h4 {
+  margin-top: var(--s-4);
+  font-size: var(--step-1);
+  font-weight: 500;
+  color: var(--ink-soft);
+}
 
 .prose--wide { max-width: 80ch; }
 
@@ -20,6 +40,14 @@
 }
 .prose li + li { margin-top: var(--s-1); }
 
+// In-page anchor links
+.prose h2,
+.prose h3,
+.prose h4 {
+  position: relative;
+  scroll-margin-top: calc(60px + var(--s-4));
+}
+
 .prose img {
   margin: var(--s-5) auto;
   border-radius: var(--radius-md);
@@ -28,4 +56,22 @@
 
 .prose pre {
   margin: var(--s-5) 0;
+}
+
+// Inline code — uses accent bar pill style
+.prose code:not(pre code) {
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+  background: var(--paper-deep);
+  color: var(--accent);
+  padding: 0.1em 0.4em;
+  border-radius: var(--radius-sm);
+  border-left: 2px solid var(--accent-bar);
+}
+
+// Horizontal rule
+.prose hr {
+  border: none;
+  border-top: 1px solid var(--rule);
+  margin: var(--s-7) 0;
 }

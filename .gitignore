@@ -57,3 +57,5 @@ site/
 purge_failed_audio.py
 *.bak-*
 tmp/*/*/*
+_docs_site/*
+_docs_site/public/*/*

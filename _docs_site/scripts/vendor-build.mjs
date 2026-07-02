@@ -3,7 +3,7 @@
 // NO CDN at runtime — every dependency must be installed locally via npm.
 //
 // Usage: node scripts/vendor-build.mjs
-// Output: assets/vendor/{theme,palette,waveform,search-palette,diagrams}.js + manifest
+// Output: assets/vendor/{theme,waveform}.js + manifest
 
 import { build } from "esbuild";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, "..");
-const outDir = resolve(root, "assets/vendor");
+const outDir = resolve(root, "static/assets/vendor");
 mkdirSync(outDir, { recursive: true });
 
 const manifest = [];
@@ -30,18 +30,6 @@ const entries = [
   {
     name: "waveform",
     entry: resolve(root, "assets/js/entry-waveform.js"),
-    target: "es2020",
-    minify: true,
-  },
-  {
-    name: "search-palette",
-    entry: resolve(root, "assets/js/entry-search.js"),
-    target: "es2020",
-    minify: true,
-  },
-  {
-    name: "diagrams",
-    entry: resolve(root, "assets/js/entry-diagrams.js"),
     target: "es2020",
     minify: true,
   },
