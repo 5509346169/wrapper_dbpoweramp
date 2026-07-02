@@ -55,3 +55,5 @@ plans/
 # MkDocs build output
 site/
 purge_failed_audio.py
+*.bak-*
+tmp/*/*/*
